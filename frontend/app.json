@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "QuickStudio Creator App",
+    "slug": "quickstudio-creator-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "android": {
+      "package": "com.quickstudio.creatorapp",
+      "adaptiveIcon": {
+        "backgroundColor": "#050816"
+      }
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.quickstudio.creatorapp"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow QuickStudio to access your media so you can edit photos and videos.",
+          "cameraPermission": "Allow QuickStudio to use your camera for capturing new content."
+        }
+      ]
+    ]
+  }
+}
