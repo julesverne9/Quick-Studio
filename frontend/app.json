@@ -1,24 +1,32 @@
 {
   "expo": {
-    "name": "QuickStudio Creator App",
+    "name": "QuickStudio",
     "slug": "quickstudio-creator-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "newArchEnabled": false,
     "android": {
       "package": "com.quickstudio.creatorapp",
       "adaptiveIcon": {
-        "backgroundColor": "#050816"
-      }
-    },
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.quickstudio.creatorapp"
+        "backgroundColor": "#020617"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "2.1.20",
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "minSdkVersion": 24
+          }
+        }
+      ],
       [
         "expo-image-picker",
         {
@@ -26,6 +34,11 @@
           "cameraPermission": "Allow QuickStudio to use your camera for capturing new content."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "59771a9c-bc53-44ee-999f-23ba5d58d5ed"
+      }
+    }
   }
 }

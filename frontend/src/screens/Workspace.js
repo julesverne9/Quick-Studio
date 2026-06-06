@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Alert,
   Image,
@@ -11,10 +11,18 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
+import Slider from "@react-native-community/slider";
+import {
+  ColorMatrix,
+  concatColorMatrices,
+  brightness as brightnessMatrix,
+  contrast as contrastMatrix,
+  saturate as saturateMatrix,
+  grayscale as grayscaleMatrix,
+  sepia as sepiaMatrix,
+} from "react-native-color-matrix-image-filters";
 
 import Button from "../components/ui/Button";
-import SectionHeader from "../components/ui/SectionHeader";
-import { editingTools, timelineCards } from "../data/mockContent";
 import { colors, spacing } from "../theme/tokens";
 import {
   layout,
@@ -23,8 +31,92 @@ import {
   modalStyles,
 } from "../styles/styles";
 
+/* ═══════════════════════════════════════════════════════════════════════
+   Preset definitions — each is a factory returning a 4×5 color matrix.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const PRESETS = [
+  {
+    id: "original",
+    label: "Original",
+    icon: "image-outline",
+    getMatrix: () => null, // identity — no filter
+  },
+  {
+    id: "bw",
+    label: "B & W",
+    icon: "contrast-outline",
+    getMatrix: () => grayscaleMatrix(1),
+  },
+  {
+    id: "sepia",
+    label: "Sepia",
+    icon: "sunny-outline",
+    getMatrix: () => sepiaMatrix(1),
+  },
+  {
+    id: "vintage",
+    label: "Vintage",
+    icon: "film-outline",
+    getMatrix: () =>
+      concatColorMatrices(
+        sepiaMatrix(0.35),
+        saturateMatrix(0.75),
+        contrastMatrix(1.1),
+        brightnessMatrix(1.05)
+      ),
+  },
+  {
+    id: "cool",
+    label: "Cool",
+    icon: "snow-outline",
+    getMatrix: () =>
+      concatColorMatrices(
+        saturateMatrix(0.8),
+        [
+          1, 0, 0, 0, -0.02,
+          0, 1, 0, 0, 0,
+          0, 0, 1, 0, 0.06,
+          0, 0, 0, 1, 0,
+        ]
+      ),
+  },
+  {
+    id: "warm",
+    label: "Warm",
+    icon: "flame-outline",
+    getMatrix: () =>
+      concatColorMatrices(
+        saturateMatrix(1.15),
+        [
+          1, 0, 0, 0, 0.06,
+          0, 1, 0, 0, 0.02,
+          0, 0, 1, 0, -0.04,
+          0, 0, 0, 1, 0,
+        ]
+      ),
+  },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Default adjustment values (1 = no change for brightness/contrast/sat)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const DEFAULT_ADJUSTMENTS = {
+  brightness: 1,
+  contrast: 1,
+  saturation: 1,
+};
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+
 export default function Workspace({ onBack }) {
   const [asset, setAsset] = useState(null);
+  const [activeTab, setActiveTab] = useState("presets");
+  const [activePreset, setActivePreset] = useState("original");
+  const [adjustments, setAdjustments] = useState(DEFAULT_ADJUSTMENTS);
+
+  /* Auth state */
   const [isAuthenticated] = useState(false);
   const [showAuthSheet, setShowAuthSheet] = useState(false);
   const [formValues, setFormValues] = useState({
@@ -32,6 +124,34 @@ export default function Workspace({ onBack }) {
     email: "",
     password: "",
   });
+
+  /* ── Compute the final combined color matrix ─────────────────────── */
+
+  const combinedMatrix = useMemo(() => {
+    const matrices = [];
+
+    // 1. Preset matrix
+    const preset = PRESETS.find((p) => p.id === activePreset);
+    const presetMatrix = preset?.getMatrix();
+    if (presetMatrix) {
+      matrices.push(presetMatrix);
+    }
+
+    // 2. Adjustment matrices (only if changed from default)
+    if (adjustments.brightness !== 1) {
+      matrices.push(brightnessMatrix(adjustments.brightness));
+    }
+    if (adjustments.contrast !== 1) {
+      matrices.push(contrastMatrix(adjustments.contrast));
+    }
+    if (adjustments.saturation !== 1) {
+      matrices.push(saturateMatrix(adjustments.saturation));
+    }
+
+    if (matrices.length === 0) return null;
+    if (matrices.length === 1) return matrices[0];
+    return concatColorMatrices(...matrices);
+  }, [activePreset, adjustments]);
 
   /* ── Media picker ────────────────────────────────────────────────── */
 
@@ -53,17 +173,18 @@ export default function Workspace({ onBack }) {
       quality: 1,
     });
 
-    if (result.canceled || !result.assets?.length) {
-      return;
-    }
+    if (result.canceled || !result.assets?.length) return;
 
     const selectedAsset = result.assets[0];
-
     setAsset({
       uri: selectedAsset.uri,
       fileName: selectedAsset.fileName || "Untitled asset",
       assetType: selectedAsset.type === "video" ? "video" : "photo",
     });
+
+    // Reset filters when new asset is loaded
+    setActivePreset("original");
+    setAdjustments(DEFAULT_ADJUSTMENTS);
   };
 
   /* ── Export handler ──────────────────────────────────────────────── */
@@ -78,6 +199,34 @@ export default function Workspace({ onBack }) {
 
   const updateField = (field, value) => {
     setFormValues((current) => ({ ...current, [field]: value }));
+  };
+
+  const updateAdjustment = (key, value) => {
+    setAdjustments((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const resetAdjustments = () => {
+    setAdjustments(DEFAULT_ADJUSTMENTS);
+  };
+
+  /* ── Helper: render filtered image ───────────────────────────────── */
+
+  const renderFilteredImage = (imageStyle) => {
+    const imageElement = (
+      <Image
+        source={{ uri: asset.uri }}
+        style={imageStyle}
+        resizeMode="contain"
+      />
+    );
+
+    if (!combinedMatrix) return imageElement;
+
+    return (
+      <ColorMatrix matrix={combinedMatrix}>
+        {imageElement}
+      </ColorMatrix>
+    );
   };
 
   /* ── Render ──────────────────────────────────────────────────────── */
@@ -118,7 +267,11 @@ export default function Workspace({ onBack }) {
               marginBottom: spacing.xl,
             }}
           >
-            <Ionicons name="image-outline" size={32} color={colors.textMuted} />
+            <Ionicons
+              name="image-outline"
+              size={32}
+              color={colors.textMuted}
+            />
           </View>
 
           <Text
@@ -152,88 +305,206 @@ export default function Workspace({ onBack }) {
       ) : (
         /* ── Editor shell ──────────────────────────────────── */
         <View style={editorStyles.shell}>
-          {/* Preview surface */}
+          {/* ── Preview surface ─────────────────────────── */}
           <View style={editorStyles.previewSurface}>
-            <View style={editorStyles.previewHeader}>
-              <Text style={editorStyles.previewLabelTitle}>Preview Canvas</Text>
-              <Text style={editorStyles.previewLabelMeta}>
-                {asset.assetType === "video"
-                  ? "Timeline ready"
-                  : "Photo layer stack"}
-              </Text>
-            </View>
-
-            <View style={editorStyles.previewStage}>
-              {asset.assetType === "photo" ? (
-                <Image
-                  source={{ uri: asset.uri }}
-                  style={editorStyles.assetPreview}
-                  resizeMode="contain"
-                />
-              ) : (
-                <View style={editorStyles.videoPlaceholder}>
-                  <View style={editorStyles.videoPlayButton}>
-                    <Text style={editorStyles.videoPlayButtonText}>Play</Text>
-                  </View>
-                  <Text style={editorStyles.videoPlaceholderTitle}>
-                    Video Preview
-                  </Text>
-                  <Text style={editorStyles.videoPlaceholderBody}>
-                    Playback, trimming, and FFmpeg render hooks will plug into
-                    this preview surface.
-                  </Text>
+            {asset.assetType === "photo" ? (
+              renderFilteredImage(editorStyles.assetPreview)
+            ) : (
+              <View style={editorStyles.videoPlaceholder}>
+                <View style={editorStyles.videoPlayButton}>
+                  <Text style={editorStyles.videoPlayButtonText}>Play</Text>
                 </View>
-              )}
-            </View>
+                <Text style={editorStyles.videoPlaceholderTitle}>
+                  Video Preview
+                </Text>
+                <Text style={editorStyles.videoPlaceholderBody}>
+                  Playback, trimming, and FFmpeg render hooks will plug into
+                  this preview surface.
+                </Text>
+              </View>
+            )}
           </View>
 
-          {/* Controls surface */}
-          <View style={editorStyles.controlsSurface}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={editorStyles.toolRow}
-            >
-              {editingTools.map((tool) => (
-                <Pressable key={tool} style={editorStyles.toolChip}>
-                  <Text style={editorStyles.toolChipText}>{tool}</Text>
+          {/* ── Toolbar ─────────────────────────────────── */}
+          <View style={editorStyles.toolbarSurface}>
+            {/* Tab bar */}
+            <View style={editorStyles.tabBar}>
+              {["presets", "adjust"].map((tab) => (
+                <Pressable
+                  key={tab}
+                  onPress={() => setActiveTab(tab)}
+                  style={[
+                    editorStyles.tabItem,
+                    activeTab === tab && editorStyles.tabItemActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      editorStyles.tabLabel,
+                      activeTab === tab && editorStyles.tabLabelActive,
+                    ]}
+                  >
+                    {tab === "presets" ? "Presets" : "Adjust"}
+                  </Text>
                 </Pressable>
               ))}
-            </ScrollView>
+            </View>
 
-            <View style={editorStyles.timelineSection}>
-              <SectionHeader
-                title="Timeline"
-                meta={
-                  asset.assetType === "video" ? "Track stack" : "Layer order"
-                }
-              />
-
+            {/* ── Presets tab ────────────────────────────── */}
+            {activeTab === "presets" && (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={editorStyles.timelineRow}
+                contentContainerStyle={editorStyles.presetsScroll}
               >
-                {timelineCards.map((card) => (
-                  <View key={card.id} style={editorStyles.timelineCard}>
-                    <View
-                      style={[
-                        editorStyles.timelineVisual,
-                        { backgroundColor: card.accent },
-                      ]}
-                    />
-                    <Text style={editorStyles.timelineCardTitle}>
-                      {card.label}
-                    </Text>
-                    <Text style={editorStyles.timelineCardMeta}>00:03</Text>
-                  </View>
-                ))}
+                {PRESETS.map((preset) => {
+                  const isActive = activePreset === preset.id;
+                  return (
+                    <Pressable
+                      key={preset.id}
+                      onPress={() => setActivePreset(preset.id)}
+                      style={editorStyles.presetItem}
+                    >
+                      <View
+                        style={[
+                          editorStyles.presetThumb,
+                          isActive && editorStyles.presetThumbActive,
+                        ]}
+                      >
+                        {/* Thumbnail with filter preview */}
+                        {preset.id === "original" ? (
+                          <Image
+                            source={{ uri: asset.uri }}
+                            style={editorStyles.presetThumbImage}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <ColorMatrix matrix={preset.getMatrix()}>
+                            <Image
+                              source={{ uri: asset.uri }}
+                              style={editorStyles.presetThumbImage}
+                              resizeMode="cover"
+                            />
+                          </ColorMatrix>
+                        )}
+                      </View>
+                      <Text
+                        style={[
+                          editorStyles.presetLabel,
+                          isActive && editorStyles.presetLabelActive,
+                        ]}
+                      >
+                        {preset.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </ScrollView>
+            )}
 
-              <View style={editorStyles.trackBar}>
-                <View style={editorStyles.trackProgress} />
+            {/* ── Adjust tab ────────────────────────────── */}
+            {activeTab === "adjust" && (
+              <View style={editorStyles.adjustPanel}>
+                {/* Brightness */}
+                <View style={editorStyles.sliderRow}>
+                  <View style={editorStyles.sliderHeader}>
+                    <Text style={editorStyles.sliderLabel}>
+                      <Ionicons
+                        name="sunny-outline"
+                        size={14}
+                        color={colors.textMuted}
+                      />{" "}
+                      Brightness
+                    </Text>
+                    <Text style={editorStyles.sliderValue}>
+                      {Math.round((adjustments.brightness - 1) * 100)}
+                    </Text>
+                  </View>
+                  <Slider
+                    style={editorStyles.slider}
+                    minimumValue={0.5}
+                    maximumValue={1.5}
+                    step={0.01}
+                    value={adjustments.brightness}
+                    onValueChange={(v) => updateAdjustment("brightness", v)}
+                    minimumTrackTintColor={colors.accentStrong}
+                    maximumTrackTintColor={colors.surfaceSoft}
+                    thumbTintColor={colors.text}
+                  />
+                </View>
+
+                {/* Contrast */}
+                <View style={editorStyles.sliderRow}>
+                  <View style={editorStyles.sliderHeader}>
+                    <Text style={editorStyles.sliderLabel}>
+                      <Ionicons
+                        name="contrast-outline"
+                        size={14}
+                        color={colors.textMuted}
+                      />{" "}
+                      Contrast
+                    </Text>
+                    <Text style={editorStyles.sliderValue}>
+                      {Math.round((adjustments.contrast - 1) * 100)}
+                    </Text>
+                  </View>
+                  <Slider
+                    style={editorStyles.slider}
+                    minimumValue={0.5}
+                    maximumValue={1.5}
+                    step={0.01}
+                    value={adjustments.contrast}
+                    onValueChange={(v) => updateAdjustment("contrast", v)}
+                    minimumTrackTintColor={colors.accentStrong}
+                    maximumTrackTintColor={colors.surfaceSoft}
+                    thumbTintColor={colors.text}
+                  />
+                </View>
+
+                {/* Saturation */}
+                <View style={editorStyles.sliderRow}>
+                  <View style={editorStyles.sliderHeader}>
+                    <Text style={editorStyles.sliderLabel}>
+                      <Ionicons
+                        name="color-palette-outline"
+                        size={14}
+                        color={colors.textMuted}
+                      />{" "}
+                      Saturation
+                    </Text>
+                    <Text style={editorStyles.sliderValue}>
+                      {Math.round((adjustments.saturation - 1) * 100)}
+                    </Text>
+                  </View>
+                  <Slider
+                    style={editorStyles.slider}
+                    minimumValue={0}
+                    maximumValue={2}
+                    step={0.01}
+                    value={adjustments.saturation}
+                    onValueChange={(v) => updateAdjustment("saturation", v)}
+                    minimumTrackTintColor={colors.accentStrong}
+                    maximumTrackTintColor={colors.surfaceSoft}
+                    thumbTintColor={colors.text}
+                  />
+                </View>
+
+                {/* Reset button */}
+                <Pressable
+                  onPress={resetAdjustments}
+                  style={editorStyles.resetButton}
+                >
+                  <Text style={editorStyles.resetLabel}>
+                    <Ionicons
+                      name="refresh-outline"
+                      size={12}
+                      color={colors.textMuted}
+                    />{" "}
+                    Reset All
+                  </Text>
+                </Pressable>
               </View>
-            </View>
+            )}
           </View>
         </View>
       )}

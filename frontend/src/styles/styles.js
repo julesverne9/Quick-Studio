@@ -517,42 +517,17 @@ export const templateStyles = StyleSheet.create({
 export const editorStyles = StyleSheet.create({
   shell: {
     flex: 1,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.xs,
   },
+
+  /* ── Preview area ──────────────────────────────────────────────── */
 
   previewSurface: {
-    flex: 1.08,
-    padding: spacing.md,
-    marginTop: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-
-  previewHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  previewLabelTitle: {
-    ...typography.eyebrow,
-    color: colors.text,
-  },
-
-  previewLabelMeta: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-
-  previewStage: {
     flex: 1,
-    marginTop: spacing.md,
-    borderRadius: radius.lg,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
     backgroundColor: colors.background,
+    borderRadius: radius.lg,
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
@@ -596,87 +571,149 @@ export const editorStyles = StyleSheet.create({
     marginTop: spacing.sm,
   },
 
-  controlsSurface: {
-    flex: 0.92,
-    marginTop: spacing.md,
-    paddingVertical: spacing.md,
+  /* ── Toolbar container ─────────────────────────────────────────── */
+
+  toolbarSurface: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
+    borderBottomWidth: 0,
+    paddingTop: spacing.sm,
+    paddingBottom: BOTTOM_INSET,
   },
 
-  toolRow: {
-    paddingHorizontal: spacing.md,
-  },
+  /* ── Tab bar ───────────────────────────────────────────────────── */
 
-  toolChip: {
+  tabBar: {
+    flexDirection: "row",
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
     backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
+    borderRadius: radius.sm,
+    padding: 3,
+  },
+
+  tabItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    borderRadius: radius.sm - 3,
+  },
+
+  tabItemActive: {
+    backgroundColor: colors.accentStrong,
+  },
+
+  tabLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.textSoft,
+  },
+
+  tabLabelActive: {
+    color: "#fff",
+  },
+
+  /* ── Presets panel ─────────────────────────────────────────────── */
+
+  presetsScroll: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: 12,
+  },
+
+  presetItem: {
+    alignItems: "center",
+    width: 72,
+  },
+
+  presetThumb: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.sm,
+    overflow: "hidden",
+    backgroundColor: colors.surfaceSoft,
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+
+  presetThumbActive: {
+    borderColor: colors.accentStrong,
+  },
+
+  presetThumbImage: {
+    width: "100%",
+    height: "100%",
+  },
+
+  presetLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.textMuted,
+    marginTop: 6,
+    textAlign: "center",
+  },
+
+  presetLabelActive: {
+    color: colors.accent,
+    fontWeight: "700",
+  },
+
+  /* ── Adjustments panel ─────────────────────────────────────────── */
+
+  adjustPanel: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
+  },
+
+  sliderRow: {
+    marginBottom: spacing.sm,
+  },
+
+  sliderHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 2,
+  },
+
+  sliderLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textMuted,
+  },
+
+  sliderValue: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.text,
+    minWidth: 36,
+    textAlign: "right",
+  },
+
+  slider: {
+    width: "100%",
+    height: 36,
+  },
+
+  resetButton: {
+    alignSelf: "center",
+    marginTop: spacing.xs,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginRight: spacing.sm,
+    backgroundColor: colors.surfaceAlt,
   },
 
-  toolChipText: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-
-  timelineSection: {
-    flex: 1,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-  },
-
-  timelineRow: {
-    paddingTop: spacing.md,
-    paddingBottom: spacing.md,
-  },
-
-  timelineCard: {
-    width: 120,
-    padding: spacing.sm,
-    marginRight: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-
-  timelineVisual: {
-    height: 68,
-    borderRadius: radius.md,
-  },
-
-  timelineCardTitle: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "700",
-    marginTop: spacing.sm,
-  },
-
-  timelineCardMeta: {
-    color: colors.textSoft,
+  resetLabel: {
     fontSize: 12,
-    marginTop: 4,
-  },
-
-  trackBar: {
-    height: 6,
-    backgroundColor: colors.surfaceSoft,
-    borderRadius: radius.pill,
-    overflow: "hidden",
-  },
-
-  trackProgress: {
-    width: "34%",
-    height: "100%",
-    backgroundColor: colors.accentStrong,
-    borderRadius: radius.pill,
+    fontWeight: "700",
+    color: colors.textMuted,
   },
 });
 
