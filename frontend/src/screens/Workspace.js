@@ -2,7 +2,10 @@ import React, { useMemo, useState } from "react";
 import {
   Alert,
   Image,
+  Linking,
   Modal,
+  PanResponder,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -11,7 +14,7 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
-import Slider from "@react-native-community/slider";
+import axios from "axios";
 import {
   ColorMatrix,
   concatColorMatrices,
@@ -108,6 +111,88 @@ const DEFAULT_ADJUSTMENTS = {
   saturation: 1,
 };
 
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL ||
+  (Platform.OS === "android"
+    ? "http://10.0.2.2:5000"
+    : "http://localhost:5000");
+
+function AdjustmentSlider({
+  label,
+  icon,
+  minimumValue,
+  maximumValue,
+  step,
+  value,
+  displayValue,
+  onValueChange,
+}) {
+  const [trackWidth, setTrackWidth] = useState(0);
+
+  const updateValueFromPosition = (positionX) => {
+    if (!trackWidth) return;
+
+    const ratio = Math.min(Math.max(positionX / trackWidth, 0), 1);
+    const rawValue = minimumValue + ratio * (maximumValue - minimumValue);
+    const steppedValue = Math.round(rawValue / step) * step;
+    const nextValue = Number(
+      Math.min(Math.max(steppedValue, minimumValue), maximumValue).toFixed(2)
+    );
+
+    onValueChange(nextValue);
+  };
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (event) => {
+          updateValueFromPosition(event.nativeEvent.locationX);
+        },
+        onPanResponderMove: (event) => {
+          updateValueFromPosition(event.nativeEvent.locationX);
+        },
+      }),
+    [trackWidth, minimumValue, maximumValue, step, onValueChange]
+  );
+
+  const progress =
+    ((value - minimumValue) / (maximumValue - minimumValue)) * 100;
+
+  return (
+    <View style={editorStyles.sliderRow}>
+      <View style={editorStyles.sliderHeader}>
+        <View style={editorStyles.sliderLabelRow}>
+          <Ionicons name={icon} size={14} color={colors.textMuted} />
+          <Text style={editorStyles.sliderLabel}>{label}</Text>
+        </View>
+        <Text style={editorStyles.sliderValue}>{displayValue}</Text>
+      </View>
+
+      <View
+        style={editorStyles.sliderTrackWrap}
+        onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
+        {...panResponder.panHandlers}
+      >
+        <View style={editorStyles.sliderTrack} />
+        <View
+          style={[
+            editorStyles.sliderFill,
+            { width: `${Math.min(Math.max(progress, 0), 100)}%` },
+          ]}
+        />
+        <View
+          style={[
+            editorStyles.sliderThumb,
+            { left: `${Math.min(Math.max(progress, 0), 100)}%` },
+          ]}
+        />
+      </View>
+    </View>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════════ */
 
 export default function Workspace({ onBack }) {
@@ -117,8 +202,11 @@ export default function Workspace({ onBack }) {
   const [adjustments, setAdjustments] = useState(DEFAULT_ADJUSTMENTS);
 
   /* Auth state */
-  const [isAuthenticated] = useState(false);
+  const [authSession, setAuthSession] = useState(null);
   const [showAuthSheet, setShowAuthSheet] = useState(false);
+  const [isSigningUp, setIsSigningUp] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportResult, setExportResult] = useState(null);
   const [formValues, setFormValues] = useState({
     name: "",
     email: "",
@@ -179,6 +267,7 @@ export default function Workspace({ onBack }) {
     setAsset({
       uri: selectedAsset.uri,
       fileName: selectedAsset.fileName || "Untitled asset",
+      mimeType: selectedAsset.mimeType || "image/jpeg",
       assetType: selectedAsset.type === "video" ? "video" : "photo",
     });
 
@@ -189,12 +278,59 @@ export default function Workspace({ onBack }) {
 
   /* ── Export handler ──────────────────────────────────────────────── */
 
-  const handleExport = () => {
-    if (!isAuthenticated) {
+  const handleExport = async () => {
+    if (!authSession?.token) {
       setShowAuthSheet(true);
       return;
     }
-    Alert.alert("Export", "Authenticated export flow will continue here.");
+
+    if (!asset || asset.assetType !== "photo") {
+      Alert.alert(
+        "Export Unavailable",
+        "Please load a photo first. Video export is not wired up yet."
+      );
+      return;
+    }
+
+    setIsExporting(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("mediaFile", {
+        uri: asset.uri,
+        name: asset.fileName || "quickstudio-photo.jpg",
+        type: asset.mimeType || "image/jpeg",
+      });
+      formData.append("assetType", asset.assetType);
+      formData.append("preset", activePreset);
+      formData.append("brightness", String(adjustments.brightness));
+      formData.append("contrast", String(adjustments.contrast));
+      formData.append("saturation", String(adjustments.saturation));
+      formData.append("guestDeviceId", authSession.user.id);
+
+      const response = await axios.post(
+        `${API_BASE_URL}/api/media/process`,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${authSession.token}`,
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      setExportResult(response.data);
+    } catch (error) {
+      const message =
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        error.message ||
+        "Export failed. Please try again.";
+
+      Alert.alert("Export Failed", message);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const updateField = (field, value) => {
@@ -209,6 +345,65 @@ export default function Workspace({ onBack }) {
     setAdjustments(DEFAULT_ADJUSTMENTS);
   };
 
+  const handleCreateAccount = async () => {
+    const name = formValues.name.trim();
+    const email = formValues.email.trim().toLowerCase();
+    const password = formValues.password;
+
+    if (!name || !email || !password) {
+      Alert.alert("Missing Details", "Please complete all three fields.");
+      return;
+    }
+
+    setIsSigningUp(true);
+
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/auth/signup`,
+        {
+          name,
+          email,
+          password,
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const payload = response.data;
+
+      setAuthSession({
+        token: payload.token,
+        user: payload.user,
+      });
+      setShowAuthSheet(false);
+      setFormValues({
+        name: "",
+        email: "",
+        password: "",
+      });
+
+      Alert.alert(
+        "Account Created",
+        `${payload.user.name}, your details have been saved and export is now unlocked.`
+      );
+    } catch (error) {
+      const message =
+        error.response?.data?.message ||
+        error.message ||
+        "We couldn't create your account. Please try again in a moment.";
+
+      Alert.alert(
+        "Sign Up Failed",
+        message
+      );
+    } finally {
+      setIsSigningUp(false);
+    }
+  };
+
   /* ── Helper: render filtered image ───────────────────────────────── */
 
   const renderFilteredImage = (imageStyle) => {
@@ -220,12 +415,23 @@ export default function Workspace({ onBack }) {
       />
     );
 
-    if (!combinedMatrix) return imageElement;
+    if (!combinedMatrix) {
+      return (
+        <View style={editorStyles.assetPreviewFrame}>
+          {imageElement}
+        </View>
+      );
+    }
 
     return (
-      <ColorMatrix matrix={combinedMatrix}>
-        {imageElement}
-      </ColorMatrix>
+      <View style={editorStyles.assetPreviewFrame}>
+        <ColorMatrix
+          matrix={combinedMatrix}
+          style={editorStyles.assetPreviewFrame}
+        >
+          {imageElement}
+        </ColorMatrix>
+      </View>
     );
   };
 
@@ -406,88 +612,40 @@ export default function Workspace({ onBack }) {
             {activeTab === "adjust" && (
               <View style={editorStyles.adjustPanel}>
                 {/* Brightness */}
-                <View style={editorStyles.sliderRow}>
-                  <View style={editorStyles.sliderHeader}>
-                    <Text style={editorStyles.sliderLabel}>
-                      <Ionicons
-                        name="sunny-outline"
-                        size={14}
-                        color={colors.textMuted}
-                      />{" "}
-                      Brightness
-                    </Text>
-                    <Text style={editorStyles.sliderValue}>
-                      {Math.round((adjustments.brightness - 1) * 100)}
-                    </Text>
-                  </View>
-                  <Slider
-                    style={editorStyles.slider}
-                    minimumValue={0.5}
-                    maximumValue={1.5}
-                    step={0.01}
-                    value={adjustments.brightness}
-                    onValueChange={(v) => updateAdjustment("brightness", v)}
-                    minimumTrackTintColor={colors.accentStrong}
-                    maximumTrackTintColor={colors.surfaceSoft}
-                    thumbTintColor={colors.text}
-                  />
-                </View>
+                <AdjustmentSlider
+                  label="Brightness"
+                  icon="sunny-outline"
+                  minimumValue={0.5}
+                  maximumValue={1.5}
+                  step={0.01}
+                  value={adjustments.brightness}
+                  displayValue={Math.round((adjustments.brightness - 1) * 100)}
+                  onValueChange={(v) => updateAdjustment("brightness", v)}
+                />
 
                 {/* Contrast */}
-                <View style={editorStyles.sliderRow}>
-                  <View style={editorStyles.sliderHeader}>
-                    <Text style={editorStyles.sliderLabel}>
-                      <Ionicons
-                        name="contrast-outline"
-                        size={14}
-                        color={colors.textMuted}
-                      />{" "}
-                      Contrast
-                    </Text>
-                    <Text style={editorStyles.sliderValue}>
-                      {Math.round((adjustments.contrast - 1) * 100)}
-                    </Text>
-                  </View>
-                  <Slider
-                    style={editorStyles.slider}
-                    minimumValue={0.5}
-                    maximumValue={1.5}
-                    step={0.01}
-                    value={adjustments.contrast}
-                    onValueChange={(v) => updateAdjustment("contrast", v)}
-                    minimumTrackTintColor={colors.accentStrong}
-                    maximumTrackTintColor={colors.surfaceSoft}
-                    thumbTintColor={colors.text}
-                  />
-                </View>
+                <AdjustmentSlider
+                  label="Contrast"
+                  icon="contrast-outline"
+                  minimumValue={0.5}
+                  maximumValue={1.5}
+                  step={0.01}
+                  value={adjustments.contrast}
+                  displayValue={Math.round((adjustments.contrast - 1) * 100)}
+                  onValueChange={(v) => updateAdjustment("contrast", v)}
+                />
 
                 {/* Saturation */}
-                <View style={editorStyles.sliderRow}>
-                  <View style={editorStyles.sliderHeader}>
-                    <Text style={editorStyles.sliderLabel}>
-                      <Ionicons
-                        name="color-palette-outline"
-                        size={14}
-                        color={colors.textMuted}
-                      />{" "}
-                      Saturation
-                    </Text>
-                    <Text style={editorStyles.sliderValue}>
-                      {Math.round((adjustments.saturation - 1) * 100)}
-                    </Text>
-                  </View>
-                  <Slider
-                    style={editorStyles.slider}
-                    minimumValue={0}
-                    maximumValue={2}
-                    step={0.01}
-                    value={adjustments.saturation}
-                    onValueChange={(v) => updateAdjustment("saturation", v)}
-                    minimumTrackTintColor={colors.accentStrong}
-                    maximumTrackTintColor={colors.surfaceSoft}
-                    thumbTintColor={colors.text}
-                  />
-                </View>
+                <AdjustmentSlider
+                  label="Saturation"
+                  icon="color-palette-outline"
+                  minimumValue={0}
+                  maximumValue={2}
+                  step={0.01}
+                  value={adjustments.saturation}
+                  displayValue={Math.round((adjustments.saturation - 1) * 100)}
+                  onValueChange={(v) => updateAdjustment("saturation", v)}
+                />
 
                 {/* Reset button */}
                 <Pressable
@@ -536,7 +694,6 @@ export default function Workspace({ onBack }) {
               placeholder="Email"
               placeholderTextColor={colors.textSoft}
               keyboardType="email-address"
-              autoCapitalize="none"
               style={modalStyles.input}
               value={formValues.email}
               onChangeText={(v) => updateField("email", v)}
@@ -552,14 +709,113 @@ export default function Workspace({ onBack }) {
 
             <View style={modalStyles.actionRow}>
               <Button
-                label="Create Account"
-                onPress={() => {}}
+                label={isSigningUp ? "Creating..." : "Create Account"}
+                onPress={handleCreateAccount}
                 style={modalStyles.halfButton}
               />
               <Button
                 label="Maybe Later"
                 variant="secondary"
                 onPress={() => setShowAuthSheet(false)}
+                style={modalStyles.halfButton}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={isExporting}
+      >
+        <View style={modalStyles.overlay}>
+          <View
+            style={[
+              modalStyles.sheet,
+              {
+                alignItems: "center",
+                paddingBottom: spacing.xl,
+              },
+            ]}
+          >
+            <View style={modalStyles.handle} />
+            <Text style={modalStyles.sheetEyebrow}>Exporting</Text>
+            <Text
+              style={[
+                modalStyles.sheetTitle,
+                {
+                  fontSize: 20,
+                  lineHeight: 28,
+                  textAlign: "center",
+                },
+              ]}
+            >
+              Rendering your edited image and saving the export metadata.
+            </Text>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={Boolean(exportResult)}
+        onRequestClose={() => setExportResult(null)}
+      >
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.sheet}>
+            <View style={modalStyles.handle} />
+            <Text style={modalStyles.sheetEyebrow}>Export Complete</Text>
+            <Text style={modalStyles.sheetTitle}>
+              Your original and edited images have been exported.
+            </Text>
+
+            {exportResult?.editedAssetUrl ? (
+              <Image
+                source={{ uri: exportResult.editedAssetUrl }}
+                style={{
+                  width: "100%",
+                  height: 220,
+                  borderRadius: 20,
+                  marginTop: spacing.lg,
+                  backgroundColor: colors.surfaceAlt,
+                }}
+                resizeMode="cover"
+              />
+            ) : null}
+
+            <Text
+              style={{
+                color: colors.textMuted,
+                fontSize: 14,
+                lineHeight: 22,
+                marginTop: spacing.md,
+              }}
+            >
+              Project ID: {exportResult?.projectId}
+            </Text>
+            <Text
+              style={{
+                color: colors.textMuted,
+                fontSize: 14,
+                lineHeight: 22,
+                marginTop: spacing.xs,
+              }}
+            >
+              Both asset URLs are now stored in MongoDB project metadata.
+            </Text>
+
+            <View style={modalStyles.actionRow}>
+              <Button
+                label="Open Edited"
+                onPress={() => Linking.openURL(exportResult.editedAssetUrl)}
+                style={modalStyles.halfButton}
+              />
+              <Button
+                label="Done"
+                variant="secondary"
+                onPress={() => setExportResult(null)}
                 style={modalStyles.halfButton}
               />
             </View>

@@ -12,6 +12,22 @@ const projectSchema = new mongoose.Schema(
       ref: "User",
       default: null
     },
+    OriginalAssetUrl: {
+      type: String,
+      default: null
+    },
+    EditedAssetUrl: {
+      type: String,
+      default: null
+    },
+    OriginalFilename: {
+      type: String,
+      default: null
+    },
+    EditedFilename: {
+      type: String,
+      default: null
+    },
     AssetType: {
       type: String,
       enum: ["photo", "video"],

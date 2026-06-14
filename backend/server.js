@@ -3,8 +3,9 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
-const jwt = require("jsonwebtoken");
 const { Server } = require("socket.io");
+const path = require('path');
+const validateJwt = require("./middleware/validateJwt");
 
 dotenv.config();
 
@@ -20,6 +21,13 @@ const port = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
+// Expose your uploads folder over a public static URL so mobile devices can display your rendered output
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Bind your fresh multimedia pipeline endpoints onto the Express app instance
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/media', require('./routes/media'));
+
 
 const connectDatabase = async () => {
   try {
@@ -28,29 +36,6 @@ const connectDatabase = async () => {
   } catch (error) {
     console.error("MongoDB connection failed:", error.message);
     process.exit(1);
-  }
-};
-
-const validateJwt = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({
-      message: "Authorization token is required for export rendering."
-    });
-  }
-
-  const token = authHeader.split(" ")[1];
-
-  try {
-    const decodedToken = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "development_jwt_secret"
-    );
-    req.user = decodedToken;
-    return next();
-  } catch (error) {
-    return res.status(401).json({ message: "Invalid or expired token." });
   }
 };
 

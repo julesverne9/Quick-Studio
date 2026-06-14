@@ -533,6 +533,11 @@ export const editorStyles = StyleSheet.create({
     justifyContent: "center",
   },
 
+  assetPreviewFrame: {
+    width: "100%",
+    height: "100%",
+  },
+
   assetPreview: {
     width: "100%",
     height: "100%",
@@ -677,7 +682,13 @@ export const editorStyles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 2,
+    marginBottom: 10,
+  },
+
+  sliderLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
 
   sliderLabel: {
@@ -694,9 +705,45 @@ export const editorStyles = StyleSheet.create({
     textAlign: "right",
   },
 
-  slider: {
+  sliderTrackWrap: {
     width: "100%",
-    height: 36,
+    height: 28,
+    justifyContent: "center",
+    position: "relative",
+  },
+
+  sliderTrack: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceSoft,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+
+  sliderFill: {
+    position: "absolute",
+    left: 0,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: colors.accentStrong,
+  },
+
+  sliderThumb: {
+    position: "absolute",
+    top: "50%",
+    width: 20,
+    height: 20,
+    borderRadius: 999,
+    backgroundColor: colors.text,
+    borderWidth: 3,
+    borderColor: colors.accentStrong,
+    marginLeft: -10,
+    marginTop: -10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
 
   resetButton: {
