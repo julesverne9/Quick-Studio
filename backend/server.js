@@ -19,14 +19,18 @@ const io = new Server(server, {
 });
 const port = process.env.PORT || 5000;
 
+app.set("socketio", io);
+
 app.use(cors());
 app.use(express.json());
-// Expose your uploads folder over a public static URL so mobile devices can display your rendered output
+// Expose your folders over public static URLs so mobile devices can display your output
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // Bind your fresh multimedia pipeline endpoints onto the Express app instance
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/media', require('./routes/media'));
+app.use('/api/video', require('./routes/video'));
 
 
 const connectDatabase = async () => {
