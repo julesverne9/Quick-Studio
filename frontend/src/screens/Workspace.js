@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Dimensions,
   Image,
   Linking,
   Modal,
@@ -26,7 +27,7 @@ import {
 } from "react-native-color-matrix-image-filters";
 
 import Button from "../components/ui/Button";
-import { colors, spacing } from "../theme/tokens";
+import { colors, spacing, radius } from "../theme/tokens";
 import {
   layout,
   topBarStyles,
@@ -111,11 +112,25 @@ const DEFAULT_ADJUSTMENTS = {
   saturation: 1,
 };
 
+/* ═══════════════════════════════════════════════════════════════════════
+   Default geometry / transform values
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const DEFAULT_GEOMETRY = {
+  rotation: 0,     // 0, 90, 180, 270
+  scale: 1.0,      // 1.0x to 3.0x zoom
+  flipped: false,  // horizontal flip
+};
+
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ||
   (Platform.OS === "android"
     ? "http://10.0.2.2:5000"
     : "http://localhost:5000");
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Reusable adjustment slider (shared between Adjust and Transform tabs)
+   ═══════════════════════════════════════════════════════════════════════ */
 
 function AdjustmentSlider({
   label,
@@ -193,6 +208,234 @@ function AdjustmentSlider({
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   Interactive crop box overlay
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function CropOverlay({ cropRect, setCropRect, containerSize }) {
+  const HANDLE_RADIUS = 10;
+  const MIN_CROP = 40;
+
+  // Clamp helper
+  const clamp = (val, min, max) => Math.min(Math.max(val, min), max);
+
+  // Create PanResponder for a specific handle/edge
+  const makeHandlePan = (type) => {
+    let startRect = null;
+
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        startRect = { ...cropRect };
+      },
+      onPanResponderMove: (_, gesture) => {
+        if (!startRect) return;
+
+        const { dx, dy } = gesture;
+        const maxW = containerSize.width;
+        const maxH = containerSize.height;
+
+        setCropRect((prev) => {
+          let { left, top, width, height } = startRect;
+
+          switch (type) {
+            case "topLeft": {
+              const newLeft = clamp(left + dx, 0, left + width - MIN_CROP);
+              const newTop = clamp(top + dy, 0, top + height - MIN_CROP);
+              width = width - (newLeft - left);
+              height = height - (newTop - top);
+              left = newLeft;
+              top = newTop;
+              break;
+            }
+            case "topRight": {
+              const newWidth = clamp(width + dx, MIN_CROP, maxW - left);
+              const newTop = clamp(top + dy, 0, top + height - MIN_CROP);
+              height = height - (newTop - top);
+              top = newTop;
+              width = newWidth;
+              break;
+            }
+            case "bottomLeft": {
+              const newLeft = clamp(left + dx, 0, left + width - MIN_CROP);
+              const newHeight = clamp(height + dy, MIN_CROP, maxH - top);
+              width = width - (newLeft - left);
+              left = newLeft;
+              height = newHeight;
+              break;
+            }
+            case "bottomRight": {
+              width = clamp(width + dx, MIN_CROP, maxW - left);
+              height = clamp(height + dy, MIN_CROP, maxH - top);
+              break;
+            }
+            case "move": {
+              left = clamp(left + dx, 0, maxW - width);
+              top = clamp(top + dy, 0, maxH - height);
+              break;
+            }
+          }
+
+          return { left, top, width, height };
+        });
+      },
+    });
+  };
+
+  const movePan = useMemo(() => makeHandlePan("move"), [cropRect, containerSize]);
+  const tlPan = useMemo(() => makeHandlePan("topLeft"), [cropRect, containerSize]);
+  const trPan = useMemo(() => makeHandlePan("topRight"), [cropRect, containerSize]);
+  const blPan = useMemo(() => makeHandlePan("bottomLeft"), [cropRect, containerSize]);
+  const brPan = useMemo(() => makeHandlePan("bottomRight"), [cropRect, containerSize]);
+
+  const thirdW = cropRect.width / 3;
+  const thirdH = cropRect.height / 3;
+
+  return (
+    <View style={editorStyles.cropOverlayContainer} pointerEvents="box-none">
+      {/* Dimmed regions outside crop */}
+      <View
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: cropRect.top,
+          backgroundColor: "rgba(0,0,0,0.55)",
+        }}
+      />
+      <View
+        style={{
+          position: "absolute",
+          top: cropRect.top,
+          left: 0,
+          width: cropRect.left,
+          height: cropRect.height,
+          backgroundColor: "rgba(0,0,0,0.55)",
+        }}
+      />
+      <View
+        style={{
+          position: "absolute",
+          top: cropRect.top,
+          left: cropRect.left + cropRect.width,
+          right: 0,
+          height: cropRect.height,
+          backgroundColor: "rgba(0,0,0,0.55)",
+        }}
+      />
+      <View
+        style={{
+          position: "absolute",
+          top: cropRect.top + cropRect.height,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0,0,0,0.55)",
+        }}
+      />
+
+      {/* Crop box border — movable */}
+      <View
+        style={[
+          editorStyles.cropBox,
+          {
+            left: cropRect.left,
+            top: cropRect.top,
+            width: cropRect.width,
+            height: cropRect.height,
+          },
+        ]}
+        {...movePan.panHandlers}
+      >
+        {/* Rule-of-thirds grid lines */}
+        <View
+          style={[
+            editorStyles.cropGridLine,
+            { left: thirdW, top: 0, width: 1, height: "100%" },
+          ]}
+        />
+        <View
+          style={[
+            editorStyles.cropGridLine,
+            { left: thirdW * 2, top: 0, width: 1, height: "100%" },
+          ]}
+        />
+        <View
+          style={[
+            editorStyles.cropGridLine,
+            { top: thirdH, left: 0, height: 1, width: "100%" },
+          ]}
+        />
+        <View
+          style={[
+            editorStyles.cropGridLine,
+            { top: thirdH * 2, left: 0, height: 1, width: "100%" },
+          ]}
+        />
+      </View>
+
+      {/* Corner handles */}
+      <View
+        style={[
+          editorStyles.cropHandle,
+          {
+            left: cropRect.left - HANDLE_RADIUS,
+            top: cropRect.top - HANDLE_RADIUS,
+          },
+        ]}
+        {...tlPan.panHandlers}
+      />
+      <View
+        style={[
+          editorStyles.cropHandle,
+          {
+            left: cropRect.left + cropRect.width - HANDLE_RADIUS,
+            top: cropRect.top - HANDLE_RADIUS,
+          },
+        ]}
+        {...trPan.panHandlers}
+      />
+      <View
+        style={[
+          editorStyles.cropHandle,
+          {
+            left: cropRect.left - HANDLE_RADIUS,
+            top: cropRect.top + cropRect.height - HANDLE_RADIUS,
+          },
+        ]}
+        {...blPan.panHandlers}
+      />
+      <View
+        style={[
+          editorStyles.cropHandle,
+          {
+            left: cropRect.left + cropRect.width - HANDLE_RADIUS,
+            top: cropRect.top + cropRect.height - HANDLE_RADIUS,
+          },
+        ]}
+        {...brPan.panHandlers}
+      />
+
+      {/* Dimension label */}
+      <View
+        style={[
+          editorStyles.cropDimLabel,
+          {
+            left: cropRect.left + cropRect.width / 2 - 30,
+            top: cropRect.top + cropRect.height + 4,
+          },
+        ]}
+      >
+        <Text style={editorStyles.cropDimText}>
+          {Math.round(cropRect.width)} × {Math.round(cropRect.height)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════════ */
 
 export default function Workspace({ onBack }) {
@@ -200,6 +443,17 @@ export default function Workspace({ onBack }) {
   const [activeTab, setActiveTab] = useState("presets");
   const [activePreset, setActivePreset] = useState("original");
   const [adjustments, setAdjustments] = useState(DEFAULT_ADJUSTMENTS);
+
+  /* Geometry / Transform state */
+  const [geometry, setGeometry] = useState(DEFAULT_GEOMETRY);
+  const [showCropOverlay, setShowCropOverlay] = useState(false);
+  const [previewSize, setPreviewSize] = useState({ width: 300, height: 400 });
+  const [cropRect, setCropRect] = useState({
+    left: 20,
+    top: 20,
+    width: 260,
+    height: 360,
+  });
 
   /* Auth state */
   const [authSession, setAuthSession] = useState(null);
@@ -241,6 +495,24 @@ export default function Workspace({ onBack }) {
     return concatColorMatrices(...matrices);
   }, [activePreset, adjustments]);
 
+  /* ── Geometry transform style ────────────────────────────────────── */
+
+  const geometryTransformStyle = useMemo(() => {
+    const transforms = [];
+
+    if (geometry.rotation !== 0) {
+      transforms.push({ rotate: `${geometry.rotation}deg` });
+    }
+    if (geometry.scale !== 1) {
+      transforms.push({ scale: geometry.scale });
+    }
+    if (geometry.flipped) {
+      transforms.push({ scaleX: -1 });
+    }
+
+    return transforms.length > 0 ? { transform: transforms } : {};
+  }, [geometry]);
+
   /* ── Media picker ────────────────────────────────────────────────── */
 
   const pickAsset = async () => {
@@ -271,9 +543,63 @@ export default function Workspace({ onBack }) {
       assetType: selectedAsset.type === "video" ? "video" : "photo",
     });
 
-    // Reset filters when new asset is loaded
+    // Reset filters and geometry when new asset is loaded
     setActivePreset("original");
     setAdjustments(DEFAULT_ADJUSTMENTS);
+    setGeometry(DEFAULT_GEOMETRY);
+    setShowCropOverlay(false);
+  };
+
+  /* ── Geometry actions ────────────────────────────────────────────── */
+
+  const rotateImage = () => {
+    setGeometry((prev) => ({
+      ...prev,
+      rotation: (prev.rotation + 90) % 360,
+    }));
+  };
+
+  const flipImage = () => {
+    setGeometry((prev) => ({
+      ...prev,
+      flipped: !prev.flipped,
+    }));
+  };
+
+  const updateScale = (value) => {
+    setGeometry((prev) => ({ ...prev, scale: value }));
+  };
+
+  const resetGeometry = () => {
+    setGeometry(DEFAULT_GEOMETRY);
+    setShowCropOverlay(false);
+    // Reset crop to fill preview
+    setCropRect({
+      left: 20,
+      top: 20,
+      width: previewSize.width - 40,
+      height: previewSize.height - 40,
+    });
+  };
+
+  const toggleCropOverlay = () => {
+    if (!showCropOverlay) {
+      // Initialize crop rect to nearly fill preview
+      setCropRect({
+        left: 20,
+        top: 20,
+        width: previewSize.width - 40,
+        height: previewSize.height - 40,
+      });
+    }
+    setShowCropOverlay((prev) => !prev);
+  };
+
+  /* ── Preview layout handler ──────────────────────────────────────── */
+
+  const onPreviewLayout = (event) => {
+    const { width, height } = event.nativeEvent.layout;
+    setPreviewSize({ width, height });
   };
 
   /* ── Export handler ──────────────────────────────────────────────── */
@@ -306,6 +632,22 @@ export default function Workspace({ onBack }) {
       formData.append("brightness", String(adjustments.brightness));
       formData.append("contrast", String(adjustments.contrast));
       formData.append("saturation", String(adjustments.saturation));
+
+      // Geometry / Transform params
+      formData.append("rotation", String(geometry.rotation));
+      formData.append("scale", String(geometry.scale));
+      formData.append("flipped", String(geometry.flipped));
+
+      // Crop coordinates (normalized to preview viewport)
+      if (showCropOverlay) {
+        formData.append("cropX", String(Math.round(cropRect.left)));
+        formData.append("cropY", String(Math.round(cropRect.top)));
+        formData.append("cropWidth", String(Math.round(cropRect.width)));
+        formData.append("cropHeight", String(Math.round(cropRect.height)));
+        formData.append("previewWidth", String(Math.round(previewSize.width)));
+        formData.append("previewHeight", String(Math.round(previewSize.height)));
+      }
+
       formData.append("guestDeviceId", authSession.user.id);
 
       const response = await axios.post(
@@ -404,6 +746,14 @@ export default function Workspace({ onBack }) {
     }
   };
 
+  /* ── Tab config ──────────────────────────────────────────────────── */
+
+  const TAB_CONFIG = [
+    { key: "presets", label: "Presets", icon: "color-filter-outline" },
+    { key: "adjust", label: "Adjust", icon: "options-outline" },
+    { key: "transform", label: "Transform", icon: "resize-outline" },
+  ];
+
   /* ── Helper: render filtered image ───────────────────────────────── */
 
   const renderFilteredImage = (imageStyle) => {
@@ -415,22 +765,34 @@ export default function Workspace({ onBack }) {
       />
     );
 
-    if (!combinedMatrix) {
-      return (
-        <View style={editorStyles.assetPreviewFrame}>
-          {imageElement}
-        </View>
-      );
-    }
+    // Wrap in geometry transform
+    const imageWithTransform = (
+      <View style={[editorStyles.assetPreviewFrame, geometryTransformStyle]}>
+        {!combinedMatrix ? (
+          imageElement
+        ) : (
+          <ColorMatrix
+            matrix={combinedMatrix}
+            style={editorStyles.assetPreviewFrame}
+          >
+            {imageElement}
+          </ColorMatrix>
+        )}
+      </View>
+    );
 
     return (
       <View style={editorStyles.assetPreviewFrame}>
-        <ColorMatrix
-          matrix={combinedMatrix}
-          style={editorStyles.assetPreviewFrame}
-        >
-          {imageElement}
-        </ColorMatrix>
+        {imageWithTransform}
+
+        {/* Crop overlay — only on transform tab with crop active */}
+        {showCropOverlay && activeTab === "transform" && (
+          <CropOverlay
+            cropRect={cropRect}
+            setCropRect={setCropRect}
+            containerSize={previewSize}
+          />
+        )}
       </View>
     );
   };
@@ -512,7 +874,10 @@ export default function Workspace({ onBack }) {
         /* ── Editor shell ──────────────────────────────────── */
         <View style={editorStyles.shell}>
           {/* ── Preview surface ─────────────────────────── */}
-          <View style={editorStyles.previewSurface}>
+          <View
+            style={editorStyles.previewSurface}
+            onLayout={onPreviewLayout}
+          >
             {asset.assetType === "photo" ? (
               renderFilteredImage(editorStyles.assetPreview)
             ) : (
@@ -533,24 +898,24 @@ export default function Workspace({ onBack }) {
 
           {/* ── Toolbar ─────────────────────────────────── */}
           <View style={editorStyles.toolbarSurface}>
-            {/* Tab bar */}
+            {/* Tab bar — now 3 tabs */}
             <View style={editorStyles.tabBar}>
-              {["presets", "adjust"].map((tab) => (
+              {TAB_CONFIG.map((tab) => (
                 <Pressable
-                  key={tab}
-                  onPress={() => setActiveTab(tab)}
+                  key={tab.key}
+                  onPress={() => setActiveTab(tab.key)}
                   style={[
                     editorStyles.tabItem,
-                    activeTab === tab && editorStyles.tabItemActive,
+                    activeTab === tab.key && editorStyles.tabItemActive,
                   ]}
                 >
                   <Text
                     style={[
                       editorStyles.tabLabel,
-                      activeTab === tab && editorStyles.tabLabelActive,
+                      activeTab === tab.key && editorStyles.tabLabelActive,
                     ]}
                   >
-                    {tab === "presets" ? "Presets" : "Adjust"}
+                    {tab.label}
                   </Text>
                 </Pressable>
               ))}
@@ -662,6 +1027,179 @@ export default function Workspace({ onBack }) {
                   </Text>
                 </Pressable>
               </View>
+            )}
+
+            {/* ── Transform tab ─────────────────────────── */}
+            {activeTab === "transform" && (
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={editorStyles.transformPanel}
+              >
+                {/* Rotation & Flip */}
+                <Text style={editorStyles.transformSectionLabel}>
+                  Orientation
+                </Text>
+                <View style={editorStyles.transformButtonRow}>
+                  <Pressable
+                    style={editorStyles.transformBtn}
+                    onPress={rotateImage}
+                  >
+                    <Ionicons
+                      name="refresh-outline"
+                      size={18}
+                      color={colors.textMuted}
+                    />
+                    <Text style={editorStyles.transformBtnLabel}>
+                      Rotate 90°
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={[
+                      editorStyles.transformBtn,
+                      geometry.flipped && editorStyles.transformBtnActive,
+                    ]}
+                    onPress={flipImage}
+                  >
+                    <Ionicons
+                      name="swap-horizontal-outline"
+                      size={18}
+                      color={
+                        geometry.flipped
+                          ? colors.accent
+                          : colors.textMuted
+                      }
+                    />
+                    <Text
+                      style={[
+                        editorStyles.transformBtnLabel,
+                        geometry.flipped &&
+                          editorStyles.transformBtnLabelActive,
+                      ]}
+                    >
+                      Flip
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {/* Rotation indicator */}
+                {geometry.rotation !== 0 && (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                      marginBottom: spacing.sm,
+                      paddingLeft: 4,
+                    }}
+                  >
+                    <Ionicons
+                      name="navigate-outline"
+                      size={14}
+                      color={colors.accent}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: "700",
+                        color: colors.accent,
+                      }}
+                    >
+                      Current: {geometry.rotation}°
+                    </Text>
+                  </View>
+                )}
+
+                {/* Zoom / Scale */}
+                <Text style={editorStyles.transformSectionLabel}>
+                  Zoom / Scale
+                </Text>
+                <AdjustmentSlider
+                  label="Scale"
+                  icon="expand-outline"
+                  minimumValue={1.0}
+                  maximumValue={3.0}
+                  step={0.05}
+                  value={geometry.scale}
+                  displayValue={`${geometry.scale.toFixed(1)}x`}
+                  onValueChange={updateScale}
+                />
+
+                {/* Crop toggle */}
+                <Text style={editorStyles.transformSectionLabel}>
+                  Crop Region
+                </Text>
+                <View style={editorStyles.transformButtonRow}>
+                  <Pressable
+                    style={[
+                      editorStyles.transformBtn,
+                      showCropOverlay && editorStyles.transformBtnActive,
+                    ]}
+                    onPress={toggleCropOverlay}
+                  >
+                    <Ionicons
+                      name="crop-outline"
+                      size={18}
+                      color={
+                        showCropOverlay
+                          ? colors.accent
+                          : colors.textMuted
+                      }
+                    />
+                    <Text
+                      style={[
+                        editorStyles.transformBtnLabel,
+                        showCropOverlay &&
+                          editorStyles.transformBtnLabelActive,
+                      ]}
+                    >
+                      {showCropOverlay ? "Crop Active" : "Enable Crop"}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {showCropOverlay && (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                      marginBottom: spacing.sm,
+                      paddingLeft: 4,
+                    }}
+                  >
+                    <Ionicons
+                      name="information-circle-outline"
+                      size={14}
+                      color={colors.textSoft}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: colors.textSoft,
+                        flex: 1,
+                      }}
+                    >
+                      Drag corners or the crop box on the preview to adjust.
+                    </Text>
+                  </View>
+                )}
+
+                {/* Master reset */}
+                <Pressable
+                  onPress={resetGeometry}
+                  style={[editorStyles.resetButton, { marginTop: spacing.md }]}
+                >
+                  <Text style={editorStyles.resetLabel}>
+                    <Ionicons
+                      name="refresh-outline"
+                      size={12}
+                      color={colors.textMuted}
+                    />{" "}
+                    Reset Transform
+                  </Text>
+                </Pressable>
+              </ScrollView>
             )}
           </View>
         </View>

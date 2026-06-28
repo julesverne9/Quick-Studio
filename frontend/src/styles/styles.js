@@ -762,6 +762,110 @@ export const editorStyles = StyleSheet.create({
     fontWeight: "700",
     color: colors.textMuted,
   },
+
+  /* ── Transform panel ───────────────────────────────────────────── */
+
+  transformPanel: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
+  },
+
+  transformSectionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.3,
+    textTransform: "uppercase",
+    color: colors.textSoft,
+    marginBottom: spacing.sm,
+    marginTop: spacing.sm,
+  },
+
+  transformButtonRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: spacing.sm,
+  },
+
+  transformBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+
+  transformBtnActive: {
+    borderColor: colors.accentStrong,
+    backgroundColor: "rgba(59, 130, 246, 0.12)",
+  },
+
+  transformBtnLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.textMuted,
+  },
+
+  transformBtnLabelActive: {
+    color: colors.accent,
+  },
+
+  /* ── Crop overlay ──────────────────────────────────────────────── */
+
+  cropOverlayContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+
+  cropBox: {
+    position: "absolute",
+    borderWidth: 1.5,
+    borderColor: colors.accent,
+    borderStyle: "dashed",
+  },
+
+  cropHandle: {
+    position: "absolute",
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.accentStrong,
+    borderWidth: 2,
+    borderColor: colors.text,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+
+  cropGridLine: {
+    position: "absolute",
+    backgroundColor: "rgba(96, 165, 250, 0.25)",
+  },
+
+  cropDimLabel: {
+    position: "absolute",
+    bottom: -22,
+    alignSelf: "center",
+    backgroundColor: "rgba(0,0,0,0.7)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+
+  cropDimText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: colors.text,
+  },
 });
 
 /* ──────────────────────────── Auth Modal / Bottom Sheet ──────────── */
