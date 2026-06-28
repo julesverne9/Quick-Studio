@@ -1,5 +1,5 @@
-import React from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import React, { useState } from "react";
+import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import {
@@ -14,12 +14,15 @@ import {
   bannerStyles,
   tutorialsStyles,
   templateStyles,
+  modalStyles,
   layout,
 } from "../styles/styles";
 
 /* ──────────────────────────────────────────────────────────────────── */
 
-export default function HomeScreen({ onBack, onNewProject }) {
+export default function HomeScreen({ onBack, onNewPhotoProject, onNewVideoProject }) {
+  const [showTypeSelector, setShowTypeSelector] = useState(false);
+
   return (
     <View style={layout.screenContainer}>
       {/* ── Top bar ──────────────────────────────────────── */}
@@ -62,7 +65,7 @@ export default function HomeScreen({ onBack, onNewProject }) {
         </ScrollView>
 
         {/* New Project banner */}
-        <Pressable onPress={onNewProject}>
+        <Pressable onPress={() => setShowTypeSelector(true)}>
           <View style={bannerStyles.container}>
             <View style={bannerStyles.background}>
               <View style={bannerStyles.orbLeft} />
@@ -159,6 +162,87 @@ export default function HomeScreen({ onBack, onNewProject }) {
           </View>
         ))}
       </ScrollView>
+
+      {/* Project Type Selector Modal */}
+      <Modal
+        animationType="slide"
+        transparent
+        visible={showTypeSelector}
+        onRequestClose={() => setShowTypeSelector(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.sheet}>
+            <View style={modalStyles.handle} />
+            <Text style={modalStyles.sheetEyebrow}>Create New Project</Text>
+            <Text style={modalStyles.sheetTitle}>
+              Select the workspace tool to begin editing your media
+            </Text>
+
+            <View style={{ gap: spacing.md, marginTop: spacing.md }}>
+              <Pressable
+                onPress={() => {
+                  setShowTypeSelector(false);
+                  onNewVideoProject();
+                }}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: colors.surfaceSoft,
+                  padding: spacing.md,
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: colors.borderStrong,
+                }}
+              >
+                <Ionicons name="film" size={24} color={colors.accent} style={{ marginRight: spacing.md }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}>Video Editor</Text>
+                  <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 2 }}>
+                    Multi-track timeline, keyframes, transitions, filters, and speed curves.
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setShowTypeSelector(false);
+                  onNewPhotoProject();
+                }}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: colors.surfaceSoft,
+                  padding: spacing.md,
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: colors.borderStrong,
+                }}
+              >
+                <Ionicons name="image" size={24} color={colors.success} style={{ marginRight: spacing.md }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}>Photo Editor</Text>
+                  <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 2 }}>
+                    Apply filters and adjust brightness, contrast, and saturation.
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                onPress={() => setShowTypeSelector(false)}
+                style={{
+                  backgroundColor: colors.surfaceAlt,
+                  padding: spacing.md,
+                  borderRadius: 16,
+                  alignItems: "center",
+                  marginTop: spacing.sm,
+                }}
+              >
+                <Text style={{ color: colors.textMuted, fontSize: 14, fontWeight: "700" }}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
