@@ -4,6 +4,7 @@ import { View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { registerRootComponent } from "expo";
 
+import { AuthProvider } from "./src/context/AuthContext";
 import LandingScreen from "./src/screens/LandingScreen";
 import HomeScreen from "./src/screens/HomeScreen";
 import Workspace from "./src/screens/Workspace";
@@ -15,33 +16,35 @@ export default function App() {
   const [activeScreen, setActiveScreen] = useState("landing");
 
   return (
-    <Provider store={store}>
-      <View style={layout.safeContainer}>
-        <StatusBar style="light" />
+    <AuthProvider>
+      <Provider store={store}>
+        <View style={layout.safeContainer}>
+          <StatusBar style="light" />
 
-        {activeScreen === "landing" && (
-          <LandingScreen
-            onGetStarted={() => setActiveScreen("home")}
-          />
-        )}
+          {activeScreen === "landing" && (
+            <LandingScreen
+              onGetStarted={() => setActiveScreen("home")}
+            />
+          )}
 
-        {activeScreen === "home" && (
-          <HomeScreen
-            onBack={() => setActiveScreen("landing")}
-            onNewPhotoProject={() => setActiveScreen("workspace")}
-            onNewVideoProject={() => setActiveScreen("video-editor")}
-          />
-        )}
+          {activeScreen === "home" && (
+            <HomeScreen
+              onBack={() => setActiveScreen("landing")}
+              onNewPhotoProject={() => setActiveScreen("workspace")}
+              onNewVideoProject={() => setActiveScreen("video-editor")}
+            />
+          )}
 
-        {activeScreen === "workspace" && (
-          <Workspace onBack={() => setActiveScreen("home")} />
-        )}
+          {activeScreen === "workspace" && (
+            <Workspace onBack={() => setActiveScreen("home")} />
+          )}
 
-        {activeScreen === "video-editor" && (
-          <VideoEditorScreen onBack={() => setActiveScreen("home")} />
-        )}
-      </View>
-    </Provider>
+          {activeScreen === "video-editor" && (
+            <VideoEditorScreen onBack={() => setActiveScreen("home")} />
+          )}
+        </View>
+      </Provider>
+    </AuthProvider>
   );
 }
 

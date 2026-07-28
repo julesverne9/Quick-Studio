@@ -1,92 +1,151 @@
-const crypto = require("crypto");
 const express = require("express");
 const jwt = require("jsonwebtoken");
-
 const User = require("../models/User");
+const { protectRoute } = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const JWT_SECRET = process.env.JWT_SECRET || "development_jwt_secret";
+const JWT_EXPIRES_IN = "7d";
 
-const hashPassword = (password, salt) =>
-  crypto.scryptSync(password, salt, 64).toString("hex");
-
-const buildAuthResponse = (user) => {
-  const token = jwt.sign(
+/* ── Helper: build a standardised auth response ──────────────────── */
+const generateToken = (user) =>
+  jwt.sign(
     {
       sub: user._id.toString(),
       email: user.email,
-      name: user.name
+      tier: user.subscriptionTier,
     },
-    process.env.JWT_SECRET || "development_jwt_secret",
-    { expiresIn: "7d" }
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
   );
 
-  return {
-    token,
-    user: {
-      id: user._id,
-      name: user.name,
-      email: user.email
-    }
-  };
-};
+const buildAuthResponse = (user, token) => ({
+  token,
+  user: {
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    subscriptionTier: user.subscriptionTier,
+    createdAt: user.createdAt,
+  },
+});
 
-router.post("/signup", async (req, res) => {
+/* ── POST /api/auth/register ─────────────────────────────────────── */
+router.post("/register", async (req, res) => {
   try {
-    const name = req.body.name?.trim();
-    const email = req.body.email?.trim().toLowerCase();
-    const password = req.body.password || "";
+    const { name, email, password } = req.body;
 
-    if (!name || !email || !password) {
+    // Validation
+    if (!name?.trim() || !email?.trim() || !password) {
       return res.status(400).json({
-        message: "Name, email, and password are all required."
-      });
-    }
-
-    if (!EMAIL_REGEX.test(email)) {
-      return res.status(400).json({
-        message: "Please enter a valid email address."
+        message: "Name, email, and password are all required.",
       });
     }
 
     if (password.length < 8) {
       return res.status(400).json({
-        message: "Password must be at least 8 characters long."
+        message: "Password must be at least 8 characters long.",
       });
     }
 
-    const existingUser = await User.findOne({ email });
+    // Check for existing user
+    const existingUser = await User.findOne({
+      email: email.trim().toLowerCase(),
+    });
     if (existingUser) {
       return res.status(409).json({
-        message: "An account with that email already exists."
+        message: "An account with that email already exists.",
       });
     }
 
-    const passwordSalt = crypto.randomBytes(16).toString("hex");
-    const passwordHash = hashPassword(password, passwordSalt);
-
+    // Create user (password is auto-hashed by the pre-save hook)
     const user = await User.create({
-      name,
-      email,
-      passwordHash,
-      passwordSalt
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      password,
     });
+
+    const token = generateToken(user);
 
     return res.status(201).json({
       message: "Account created successfully.",
-      ...buildAuthResponse(user)
+      ...buildAuthResponse(user, token),
     });
   } catch (error) {
+    // Catch Mongoose duplicate key race condition
     if (error?.code === 11000) {
       return res.status(409).json({
-        message: "An account with that email already exists."
+        message: "An account with that email already exists.",
+      });
+    }
+    console.error("Register error:", error);
+    return res.status(500).json({
+      message: "Unable to create account right now.",
+    });
+  }
+});
+
+/* ── POST /api/auth/login ────────────────────────────────────────── */
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email?.trim() || !password) {
+      return res.status(400).json({
+        message: "Email and password are required.",
       });
     }
 
-    console.error("Signup failed:", error);
+    // .select('+password') overrides the schema-level `select: false`
+    const user = await User.findOne({
+      email: email.trim().toLowerCase(),
+    }).select("+password");
+
+    if (!user) {
+      return res.status(401).json({
+        message: "Invalid email or password.",
+      });
+    }
+
+    const isMatch = await user.matchPassword(password);
+    if (!isMatch) {
+      return res.status(401).json({
+        message: "Invalid email or password.",
+      });
+    }
+
+    const token = generateToken(user);
+
+    return res.status(200).json({
+      message: "Login successful.",
+      ...buildAuthResponse(user, token),
+    });
+  } catch (error) {
+    console.error("Login error:", error);
     return res.status(500).json({
-      message: "Unable to create account right now."
+      message: "Unable to log in right now.",
+    });
+  }
+});
+
+/* ── GET /api/auth/me  (protected — session revalidation) ────────── */
+router.get("/me", protectRoute, async (req, res) => {
+  try {
+    // req.user is already populated by protectRoute middleware (minus password)
+    return res.status(200).json({
+      user: {
+        id: req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+        subscriptionTier: req.user.subscriptionTier,
+        createdAt: req.user.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("Fetch user error:", error);
+    return res.status(500).json({
+      message: "Unable to fetch user data.",
     });
   }
 });

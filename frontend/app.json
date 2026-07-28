@@ -34,7 +34,8 @@
           "cameraPermission": "Allow QuickStudio to use your camera for capturing new content."
         }
       ],
-      "expo-video"
+      "expo-video",
+      "expo-secure-store"
     ],
     "extra": {
       "eas": {

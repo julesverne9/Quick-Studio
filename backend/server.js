@@ -31,7 +31,6 @@ app.use('/public', express.static(path.join(__dirname, 'public')));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/video', require('./routes/video'));
 app.use('/api/media', require('./routes/media'));
-app.use('/api/video', require('./routes/video'));
 
 
 
@@ -72,7 +71,7 @@ app.post("/api/projects/render", validateJwt, (req, res) => {
 const startServer = async () => {
   await connectDatabase();
 
-  server.listen(port, () => {
+  server.listen(port, '0.0.0.0', () => {
     console.log(`Server listening on port ${port}`);
   });
 };
