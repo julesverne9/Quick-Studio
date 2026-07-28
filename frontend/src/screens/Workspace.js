@@ -1,5 +1,6 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Dimensions,
   Image,
@@ -14,6 +15,7 @@ import {
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
 import {
@@ -98,6 +100,29 @@ const PRESETS = [
           0, 0, 1, 0, -0.04,
           0, 0, 0, 1, 0,
         ]
+      ),
+  },
+  {
+    id: "negative",
+    label: "Negative",
+    icon: "invert-mode-outline",
+    getMatrix: () => [
+      -1, 0, 0, 0, 1,
+       0,-1, 0, 0, 1,
+       0, 0,-1, 0, 1,
+       0, 0, 0, 1, 0,
+    ],
+  },
+  {
+    id: "vignette",
+    label: "Vignette",
+    icon: "aperture-outline",
+    // Approximate vignette with a subtle contrast+darken — the real FFmpeg
+    // vignette is a spatial filter applied server-side.
+    getMatrix: () =>
+      concatColorMatrices(
+        contrastMatrix(1.15),
+        brightnessMatrix(0.92)
       ),
   },
 ];
@@ -455,6 +480,9 @@ export default function Workspace({ onBack }) {
     height: 360,
   });
 
+  /* Video playback state */
+  const [isVideoPlaying, setIsVideoPlaying] = useState(true);
+
   /* Auth state */
   const [authSession, setAuthSession] = useState(null);
   const [showAuthSheet, setShowAuthSheet] = useState(false);
@@ -465,6 +493,51 @@ export default function Workspace({ onBack }) {
     name: "",
     email: "",
     password: "",
+  });
+
+  /* ── Video player (expo-video) ───────────────────────────────── */
+
+  const videoSource = asset?.assetType === "video" ? asset.uri : null;
+
+  const player = useVideoPlayer(videoSource, (p) => {
+    if (videoSource) {
+      p.loop = true;
+      p.play();
+    }
+  });
+
+  // Track playing state via event listener
+  useEffect(() => {
+    if (!player) return;
+
+    const subscription = player.addListener("playingChange", (event) => {
+      setIsVideoPlaying(event.isPlaying);
+    });
+
+    return () => {
+      subscription?.remove();
+    };
+  }, [player]);
+
+  const toggleVideoPlayback = useCallback(() => {
+    if (!player) return;
+    if (isVideoPlaying) {
+      player.pause();
+    } else {
+      player.play();
+    }
+  }, [player, isVideoPlaying]);
+
+  /* Result video player for export result modal */
+  const resultVideoSource = exportResult?.downloadUrl
+    ? exportResult.downloadUrl.replace(/http:\/\/localhost:\d+/, API_BASE_URL)
+    : null;
+
+  const resultPlayer = useVideoPlayer(resultVideoSource, (p) => {
+    if (resultVideoSource) {
+      p.loop = true;
+      p.play();
+    }
   });
 
   /* ── Compute the final combined color matrix ─────────────────────── */
@@ -610,10 +683,10 @@ export default function Workspace({ onBack }) {
       return;
     }
 
-    if (!asset || asset.assetType !== "photo") {
+    if (!asset) {
       Alert.alert(
-        "Export Unavailable",
-        "Please load a photo first. Video export is not wired up yet."
+        "No Media",
+        "Please select a photo or video first."
       );
       return;
     }
@@ -621,47 +694,89 @@ export default function Workspace({ onBack }) {
     setIsExporting(true);
 
     try {
-      const formData = new FormData();
-      formData.append("mediaFile", {
-        uri: asset.uri,
-        name: asset.fileName || "quickstudio-photo.jpg",
-        type: asset.mimeType || "image/jpeg",
-      });
-      formData.append("assetType", asset.assetType);
-      formData.append("preset", activePreset);
-      formData.append("brightness", String(adjustments.brightness));
-      formData.append("contrast", String(adjustments.contrast));
-      formData.append("saturation", String(adjustments.saturation));
+      if (asset.assetType === "video") {
+        /* ── Video export → POST to /api/video/process ─────────── */
+        const formData = new FormData();
+        formData.append("videoFile", {
+          uri: asset.uri,
+          name: asset.fileName || "upload.mp4",
+          type: asset.mimeType || "video/mp4",
+        });
+        formData.append("filterId", activePreset);
+        formData.append("brightness", String(adjustments.brightness));
+        formData.append("contrast", String(adjustments.contrast));
+        formData.append("saturation", String(adjustments.saturation));
+        formData.append("guestDeviceId", authSession.user.id);
 
-      // Geometry / Transform params
-      formData.append("rotation", String(geometry.rotation));
-      formData.append("scale", String(geometry.scale));
-      formData.append("flipped", String(geometry.flipped));
+        const response = await axios.post(
+          `${API_BASE_URL}/api/video/process`,
+          formData,
+          {
+            headers: {
+              Authorization: `Bearer ${authSession.token}`,
+              "Content-Type": "multipart/form-data",
+            },
+            timeout: 120000, // 120s — FFmpeg rendering can take time
+          }
+        );
 
-      // Crop coordinates (normalized to preview viewport)
-      if (showCropOverlay) {
-        formData.append("cropX", String(Math.round(cropRect.left)));
-        formData.append("cropY", String(Math.round(cropRect.top)));
-        formData.append("cropWidth", String(Math.round(cropRect.width)));
-        formData.append("cropHeight", String(Math.round(cropRect.height)));
-        formData.append("previewWidth", String(Math.round(previewSize.width)));
-        formData.append("previewHeight", String(Math.round(previewSize.height)));
-      }
+        const data = response.data;
 
-      formData.append("guestDeviceId", authSession.user.id);
+        // Rewrite localhost URL to actual API base for physical devices
+        const correctedUrl = data.downloadUrl
+          ? data.downloadUrl.replace(/http:\/\/localhost:\d+/, API_BASE_URL)
+          : null;
 
-      const response = await axios.post(
-        `${API_BASE_URL}/api/media/process`,
-        formData,
-        {
-          headers: {
-            Authorization: `Bearer ${authSession.token}`,
-            "Content-Type": "multipart/form-data",
-          },
+        setExportResult({
+          ...data,
+          downloadUrl: correctedUrl,
+          isVideo: true,
+        });
+
+      } else {
+        /* ── Photo export → POST to /api/media/process (existing) ── */
+        const formData = new FormData();
+        formData.append("mediaFile", {
+          uri: asset.uri,
+          name: asset.fileName || "quickstudio-photo.jpg",
+          type: asset.mimeType || "image/jpeg",
+        });
+        formData.append("assetType", asset.assetType);
+        formData.append("preset", activePreset);
+        formData.append("brightness", String(adjustments.brightness));
+        formData.append("contrast", String(adjustments.contrast));
+        formData.append("saturation", String(adjustments.saturation));
+
+        // Geometry / Transform params
+        formData.append("rotation", String(geometry.rotation));
+        formData.append("scale", String(geometry.scale));
+        formData.append("flipped", String(geometry.flipped));
+
+        // Crop coordinates (normalized to preview viewport)
+        if (showCropOverlay) {
+          formData.append("cropX", String(Math.round(cropRect.left)));
+          formData.append("cropY", String(Math.round(cropRect.top)));
+          formData.append("cropWidth", String(Math.round(cropRect.width)));
+          formData.append("cropHeight", String(Math.round(cropRect.height)));
+          formData.append("previewWidth", String(Math.round(previewSize.width)));
+          formData.append("previewHeight", String(Math.round(previewSize.height)));
         }
-      );
 
-      setExportResult(response.data);
+        formData.append("guestDeviceId", authSession.user.id);
+
+        const response = await axios.post(
+          `${API_BASE_URL}/api/media/process`,
+          formData,
+          {
+            headers: {
+              Authorization: `Bearer ${authSession.token}`,
+              "Content-Type": "multipart/form-data",
+            },
+          }
+        );
+
+        setExportResult({ ...response.data, isVideo: false });
+      }
     } catch (error) {
       const message =
         error.response?.data?.message ||
@@ -797,6 +912,46 @@ export default function Workspace({ onBack }) {
     );
   };
 
+  /* ── Helper: render video preview player ─────────────────────────── */
+
+  const renderVideoPlayer = () => {
+    return (
+      <View style={editorStyles.videoPlayerContainer}>
+        <VideoView
+          player={player}
+          style={editorStyles.videoPlayer}
+          contentFit="contain"
+          nativeControls={false}
+        />
+
+        {/* Play/Pause floating overlay */}
+        <Pressable
+          style={editorStyles.videoPlayPauseOverlay}
+          onPress={toggleVideoPlayback}
+        >
+          <Ionicons
+            name={isVideoPlaying ? "pause" : "play"}
+            size={20}
+            color="#fff"
+          />
+        </Pressable>
+
+        {/* Status badge */}
+        <View style={editorStyles.videoStatusBadge}>
+          <View
+            style={[
+              editorStyles.videoStatusDot,
+              isVideoPlaying && editorStyles.videoStatusDotPlaying,
+            ]}
+          />
+          <Text style={editorStyles.videoStatusText}>
+            {isVideoPlaying ? "PLAYING" : "PAUSED"}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
   /* ── Render ──────────────────────────────────────────────────────── */
 
   return (
@@ -881,18 +1036,7 @@ export default function Workspace({ onBack }) {
             {asset.assetType === "photo" ? (
               renderFilteredImage(editorStyles.assetPreview)
             ) : (
-              <View style={editorStyles.videoPlaceholder}>
-                <View style={editorStyles.videoPlayButton}>
-                  <Text style={editorStyles.videoPlayButtonText}>Play</Text>
-                </View>
-                <Text style={editorStyles.videoPlaceholderTitle}>
-                  Video Preview
-                </Text>
-                <Text style={editorStyles.videoPlaceholderBody}>
-                  Playback, trimming, and FFmpeg render hooks will plug into
-                  this preview surface.
-                </Text>
-              </View>
+              renderVideoPlayer()
             )}
           </View>
 
@@ -930,6 +1074,40 @@ export default function Workspace({ onBack }) {
               >
                 {PRESETS.map((preset) => {
                   const isActive = activePreset === preset.id;
+
+                  /* Video mode: icon-based preset cards */
+                  if (asset.assetType === "video") {
+                    return (
+                      <Pressable
+                        key={preset.id}
+                        onPress={() => setActivePreset(preset.id)}
+                        style={editorStyles.presetItem}
+                      >
+                        <View
+                          style={[
+                            editorStyles.videoPresetThumb,
+                            isActive && editorStyles.videoPresetThumbActive,
+                          ]}
+                        >
+                          <Ionicons
+                            name={preset.icon}
+                            size={24}
+                            color={isActive ? colors.accent : colors.textMuted}
+                          />
+                        </View>
+                        <Text
+                          style={[
+                            editorStyles.presetLabel,
+                            isActive && editorStyles.presetLabelActive,
+                          ]}
+                        >
+                          {preset.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  }
+
+                  /* Photo mode: image thumbnail preset cards */
                   return (
                     <Pressable
                       key={preset.id}
@@ -980,8 +1158,8 @@ export default function Workspace({ onBack }) {
                 <AdjustmentSlider
                   label="Brightness"
                   icon="sunny-outline"
-                  minimumValue={0.5}
-                  maximumValue={1.5}
+                  minimumValue={0}
+                  maximumValue={2}
                   step={0.01}
                   value={adjustments.brightness}
                   displayValue={Math.round((adjustments.brightness - 1) * 100)}
@@ -992,8 +1170,8 @@ export default function Workspace({ onBack }) {
                 <AdjustmentSlider
                   label="Contrast"
                   icon="contrast-outline"
-                  minimumValue={0.5}
-                  maximumValue={1.5}
+                  minimumValue={0}
+                  maximumValue={2}
                   step={0.01}
                   value={adjustments.contrast}
                   displayValue={Math.round((adjustments.contrast - 1) * 100)}
@@ -1262,6 +1440,7 @@ export default function Workspace({ onBack }) {
         </View>
       </Modal>
 
+      {/* ── Exporting modal ────────────────────────────────── */}
       <Modal
         animationType="fade"
         transparent
@@ -1279,6 +1458,13 @@ export default function Workspace({ onBack }) {
           >
             <View style={modalStyles.handle} />
             <Text style={modalStyles.sheetEyebrow}>Exporting</Text>
+
+            <ActivityIndicator
+              size="large"
+              color={colors.accent}
+              style={{ marginTop: spacing.lg }}
+            />
+
             <Text
               style={[
                 modalStyles.sheetTitle,
@@ -1289,12 +1475,15 @@ export default function Workspace({ onBack }) {
                 },
               ]}
             >
-              Rendering your edited image and saving the export metadata.
+              {asset?.assetType === "video"
+                ? "Rendering Video on Backend...\nThis may take a moment while FFmpeg processes your clip."
+                : "Rendering your edited image and saving the export metadata."}
             </Text>
           </View>
         </View>
       </Modal>
 
+      {/* ── Export result modal ────────────────────────────── */}
       <Modal
         animationType="slide"
         transparent
@@ -1306,10 +1495,22 @@ export default function Workspace({ onBack }) {
             <View style={modalStyles.handle} />
             <Text style={modalStyles.sheetEyebrow}>Export Complete</Text>
             <Text style={modalStyles.sheetTitle}>
-              Your original and edited images have been exported.
+              {exportResult?.isVideo
+                ? "Your video has been processed and is ready."
+                : "Your original and edited images have been exported."}
             </Text>
 
-            {exportResult?.editedAssetUrl ? (
+            {/* Show result media */}
+            {exportResult?.isVideo && exportResult?.downloadUrl ? (
+              <View style={editorStyles.videoResultPlayerWrap}>
+                <VideoView
+                  player={resultPlayer}
+                  style={editorStyles.videoResultPlayer}
+                  contentFit="contain"
+                  nativeControls={true}
+                />
+              </View>
+            ) : exportResult?.editedAssetUrl ? (
               <Image
                 source={{ uri: exportResult.editedAssetUrl }}
                 style={{
@@ -1341,13 +1542,20 @@ export default function Workspace({ onBack }) {
                 marginTop: spacing.xs,
               }}
             >
-              Both asset URLs are now stored in MongoDB project metadata.
+              {exportResult?.isVideo
+                ? "The processed video is available at the download URL."
+                : "Both asset URLs are now stored in MongoDB project metadata."}
             </Text>
 
             <View style={modalStyles.actionRow}>
               <Button
-                label="Open Edited"
-                onPress={() => Linking.openURL(exportResult.editedAssetUrl)}
+                label={exportResult?.isVideo ? "Open Video" : "Open Edited"}
+                onPress={() => {
+                  const url = exportResult?.isVideo
+                    ? exportResult.downloadUrl
+                    : exportResult?.editedAssetUrl;
+                  if (url) Linking.openURL(url);
+                }}
                 style={modalStyles.halfButton}
               />
               <Button

@@ -33,7 +33,8 @@
           "photosPermission": "Allow QuickStudio to access your media so you can edit photos and videos.",
           "cameraPermission": "Allow QuickStudio to use your camera for capturing new content."
         }
-      ]
+      ],
+      "expo-video"
     ],
     "extra": {
       "eas": {
