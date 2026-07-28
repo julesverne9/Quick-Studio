@@ -866,6 +866,98 @@ export const editorStyles = StyleSheet.create({
     fontWeight: "700",
     color: colors.text,
   },
+
+  /* ── Video player ─────────────────────────────────────────────── */
+
+  videoPlayerContainer: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#000",
+  },
+
+  videoPlayer: {
+    width: "100%",
+    height: "100%",
+  },
+
+  videoPlayPauseOverlay: {
+    position: "absolute",
+    bottom: 14,
+    right: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  videoStatusBadge: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+
+  videoStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: colors.danger,
+  },
+
+  videoStatusDotPlaying: {
+    backgroundColor: colors.success,
+  },
+
+  videoStatusText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.text,
+    letterSpacing: 0.5,
+  },
+
+  /* ── Video preset thumbnails (icon-based for video mode) ─────── */
+
+  videoPresetThumb: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceSoft,
+    borderWidth: 2,
+    borderColor: "transparent",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  videoPresetThumbActive: {
+    borderColor: colors.accentStrong,
+    backgroundColor: "rgba(59, 130, 246, 0.12)",
+  },
+
+  /* ── Export result video player ────────────────────────────────── */
+
+  videoResultPlayerWrap: {
+    width: "100%",
+    height: 220,
+    borderRadius: 20,
+    overflow: "hidden",
+    marginTop: spacing.lg,
+    backgroundColor: "#000",
+  },
+
+  videoResultPlayer: {
+    width: "100%",
+    height: "100%",
+  },
 });
 
 /* ──────────────────────────── Auth Modal / Bottom Sheet ──────────── */

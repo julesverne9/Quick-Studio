@@ -29,8 +29,10 @@ app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // Bind your fresh multimedia pipeline endpoints onto the Express app instance
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/video', require('./routes/video'));
 app.use('/api/media', require('./routes/media'));
 app.use('/api/video', require('./routes/video'));
+
 
 
 const connectDatabase = async () => {
