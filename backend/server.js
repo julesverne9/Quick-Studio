@@ -4,8 +4,7 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const { Server } = require("socket.io");
-const path = require('path');
-const validateJwt = require("./middleware/validateJwt");
+const path = require("path");
 
 dotenv.config();
 
@@ -14,8 +13,8 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"]
-  }
+    methods: ["GET", "POST"],
+  },
 });
 const port = process.env.PORT || 5000;
 
@@ -23,16 +22,13 @@ app.set("socketio", io);
 
 app.use(cors());
 app.use(express.json());
-// Expose your folders over public static URLs so mobile devices can display your output
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-app.use('/public', express.static(path.join(__dirname, 'public')));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use("/public", express.static(path.join(__dirname, "public")));
 
-// Bind your fresh multimedia pipeline endpoints onto the Express app instance
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/video', require('./routes/video'));
-app.use('/api/media', require('./routes/media'));
-
-
+app.use("/api/auth", require("./routes/auth"));
+app.use("/api/video", require("./routes/video"));
+app.use("/api/media", require("./routes/media"));
+app.use("/api/projects", require("./routes/projects"));
 
 const connectDatabase = async () => {
   try {
@@ -48,7 +44,7 @@ io.on("connection", (socket) => {
   console.log(`Socket client connected: ${socket.id}`);
 
   socket.emit("handshake", {
-    message: "QuickStudio real-time channel connected."
+    message: "QuickStudio real-time channel connected.",
   });
 
   socket.on("disconnect", () => {
@@ -56,22 +52,14 @@ io.on("connection", (socket) => {
   });
 });
 
-app.get("/api/health", (req, res) => {
+app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", message: "QuickStudio backend is running." });
-});
-
-app.post("/api/projects/render", validateJwt, (req, res) => {
-  res.status(202).json({
-    message: "Render request accepted for authenticated user.",
-    requestedBy: req.user,
-    renderPayload: req.body
-  });
 });
 
 const startServer = async () => {
   await connectDatabase();
 
-  server.listen(port, '0.0.0.0', () => {
+  server.listen(port, "0.0.0.0", () => {
     console.log(`Server listening on port ${port}`);
   });
 };

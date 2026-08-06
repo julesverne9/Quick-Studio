@@ -3,6 +3,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -30,52 +31,64 @@ export default function PaywallModal({ visible, onClose, feature, onUpgrade }) {
         <Pressable style={styles.backdrop} onPress={onClose} />
 
         <View style={styles.sheet}>
-          {/* ── Drag handle ──────────────────────────────────────── */}
-          <View style={styles.handleBar} />
-
-          {/* ── Badge ────────────────────────────────────────────── */}
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>PRO</Text>
-          </View>
-
-          {/* ── Header ───────────────────────────────────────────── */}
-          <Text style={styles.title}>Unlock Pro Features</Text>
-          <Text style={styles.subtitle}>
-            {feature
-              ? `"${feature}" is a Pro feature.`
-              : "This feature requires a Pro subscription."}
-            {"\n"}Upgrade to unlock the full creative toolkit.
-          </Text>
-
-          {/* ── Perks list ───────────────────────────────────────── */}
-          <View style={styles.perksList}>
-            {PRO_PERKS.map((perk) => (
-              <View key={perk.label} style={styles.perkRow}>
-                <Text style={styles.perkIcon}>{perk.icon}</Text>
-                <Text style={styles.perkLabel}>{perk.label}</Text>
-                <Text style={styles.perkCheck}>✓</Text>
-              </View>
-            ))}
-          </View>
-
-          {/* ── CTA ──────────────────────────────────────────────── */}
-          <Pressable
-            style={({ pressed }) => [
-              styles.upgradeButton,
-              pressed && styles.upgradePressed,
-            ]}
-            onPress={() => {
-              onUpgrade?.();
-              onClose?.();
-            }}
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            contentContainerStyle={styles.scrollContent}
           >
-            <Text style={styles.upgradeLabel}>Upgrade to Pro</Text>
-          </Pressable>
+            {/* ── Drag handle ──────────────────────────────────────── */}
+            <View style={styles.handleBar} />
 
-          {/* ── Dismiss ──────────────────────────────────────────── */}
-          <Pressable style={styles.dismissButton} onPress={onClose}>
-            <Text style={styles.dismissLabel}>Maybe Later</Text>
-          </Pressable>
+            {/* ── Badge ────────────────────────────────────────────── */}
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>PRO</Text>
+            </View>
+
+            {/* ── Header ───────────────────────────────────────────── */}
+            <Text style={styles.title}>Unlock Pro Features</Text>
+            <Text style={styles.subtitle}>
+              {feature
+                ? `"${feature}" is a Pro feature.`
+                : "This feature requires a Pro subscription."}
+              {"\n"}Upgrade to unlock the full creative toolkit.
+            </Text>
+
+            {/* ── Perks list ───────────────────────────────────────── */}
+            <View style={styles.perksList}>
+              {PRO_PERKS.map((perk) => (
+                <View key={perk.label} style={styles.perkRow}>
+                  <Text style={styles.perkIcon}>{perk.icon}</Text>
+                  <Text style={styles.perkLabel}>{perk.label}</Text>
+                  <Text style={styles.perkCheck}>✓</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* ── CTA ──────────────────────────────────────────────── */}
+            <Pressable
+              style={({ pressed }) => [
+                styles.upgradeButton,
+                pressed && styles.upgradePressed,
+              ]}
+              onPress={() => {
+                onUpgrade?.();
+                onClose?.();
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.upgradeLabel}>Upgrade to Pro</Text>
+            </Pressable>
+
+            {/* ── Dismiss ──────────────────────────────────────────── */}
+            <Pressable
+              style={styles.dismissButton}
+              onPress={onClose}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.dismissLabel}>Maybe Later</Text>
+            </Pressable>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -102,6 +115,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderBottomWidth: 0,
     borderColor: colors.border,
+    maxHeight: "85%",
+  },
+  scrollContent: {
     alignItems: "center",
   },
   handleBar: {

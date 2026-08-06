@@ -39,11 +39,13 @@ const deleteToken = async () => {
   }
 };
 
-/* ── API client ──────────────────────────────────────────────────── */
-const API_BASE = "http://192.168.29.149:5000";
+/* ── API client ────────────────────────────────────────────── */
+const API_BASE =
+  process.env.EXPO_PUBLIC_API_URL || "http://192.168.29.149:5000";
+
 const api = axios.create({
   baseURL: `${API_BASE}/api`,
-  timeout: 15000,
+  timeout: 20000,
   headers: { "Content-Type": "application/json" },
 });
 

@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
 import { useDispatch, useSelector } from "react-redux";
 import io from "socket.io-client";
 import axios from "axios";
@@ -31,9 +32,10 @@ import Controls from "./components/Controls";
 import EditorHome from "./components/EditorHome";
 
 const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL || "http://localhost:5000";
+  process.env.EXPO_PUBLIC_API_URL || "http://192.168.29.149:5000";
 
-export default function VideoEditorScreen({ onBack }: { onBack: () => void }) {
+export default function VideoEditorScreen() {
+  const navigation = useNavigation<any>();
   const dispatch = useDispatch();
 
   const currentProject = useSelector((state: any) => state.videoEditor.currentProject);
@@ -145,7 +147,7 @@ export default function VideoEditorScreen({ onBack }: { onBack: () => void }) {
     return (
       <EditorHome
         onSelectProject={(id) => dispatch(selectProject(id))}
-        onClose={onBack}
+        onClose={() => navigation.goBack()}
       />
     );
   }
@@ -157,15 +159,16 @@ export default function VideoEditorScreen({ onBack }: { onBack: () => void }) {
         <Pressable
           onPress={() => dispatch(selectProject(""))} // Deselect to return to Video Home
           style={styles.headerBtn}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Ionicons name="home-outline" size={20} color={colors.text} />
         </Pressable>
 
         <View style={styles.undoRedoGroup}>
-          <Pressable onPress={() => dispatch(undo())} style={styles.headerBtn}>
+          <Pressable onPress={() => dispatch(undo())} style={styles.headerBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Ionicons name="arrow-undo-outline" size={20} color={colors.text} />
           </Pressable>
-          <Pressable onPress={() => dispatch(redo())} style={styles.headerBtn}>
+          <Pressable onPress={() => dispatch(redo())} style={styles.headerBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Ionicons name="arrow-redo-outline" size={20} color={colors.text} />
           </Pressable>
         </View>
@@ -177,6 +180,7 @@ export default function VideoEditorScreen({ onBack }: { onBack: () => void }) {
         <Pressable
           onPress={() => setShowExportModal(true)}
           style={[styles.headerBtn, styles.exportBtn]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Text style={styles.exportBtnText}>Export</Text>
         </Pressable>
@@ -191,7 +195,7 @@ export default function VideoEditorScreen({ onBack }: { onBack: () => void }) {
       <View style={styles.playbackControls}>
         <Text style={styles.timecode}>{formatTime(currentTimeMs)}</Text>
 
-        <Pressable onPress={handlePlayPause} style={styles.playPauseBtn}>
+        <Pressable onPress={handlePlayPause} style={styles.playPauseBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons
             name={isPlaying ? "pause" : "play"}
             size={24}
@@ -225,6 +229,7 @@ export default function VideoEditorScreen({ onBack }: { onBack: () => void }) {
                   setShowExportModal(false);
                   setIsExporting(false);
                 }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Ionicons name="close" size={24} color={colors.text} />
               </Pressable>

@@ -4,6 +4,7 @@ import {
   Alert,
   Dimensions,
   Image,
+  KeyboardAvoidingView,
   Linking,
   Modal,
   PanResponder,
@@ -17,6 +18,7 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
 import axios from "axios";
 import {
   ColorMatrix,
@@ -148,10 +150,7 @@ const DEFAULT_GEOMETRY = {
 };
 
 const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ||
-  (Platform.OS === "android"
-    ? "http://10.0.2.2:5000"
-    : "http://localhost:5000");
+  process.env.EXPO_PUBLIC_API_URL || "http://192.168.29.149:5000";
 
 /* ═══════════════════════════════════════════════════════════════════════
    Reusable adjustment slider (shared between Adjust and Transform tabs)
@@ -463,7 +462,8 @@ function CropOverlay({ cropRect, setCropRect, containerSize }) {
 
 /* ═══════════════════════════════════════════════════════════════════════ */
 
-export default function Workspace({ onBack }) {
+export default function Workspace() {
+  const navigation = useNavigation();
   const [asset, setAsset] = useState(null);
   const [activeTab, setActiveTab] = useState("presets");
   const [activePreset, setActivePreset] = useState("original");
@@ -765,7 +765,7 @@ export default function Workspace({ onBack }) {
         formData.append("guestDeviceId", authSession.user.id);
 
         const response = await axios.post(
-          `${API_BASE_URL}/api/media/process`,
+          `${API_BASE_URL}/api/projects/render`,
           formData,
           {
             headers: {
@@ -816,7 +816,7 @@ export default function Workspace({ onBack }) {
 
     try {
       const response = await axios.post(
-        `${API_BASE_URL}/api/auth/signup`,
+        `${API_BASE_URL}/api/auth/register`,
         {
           name,
           email,
@@ -958,7 +958,7 @@ export default function Workspace({ onBack }) {
     <View style={layout.screenContainer}>
       {/* ── Top bar ──────────────────────────────────────── */}
       <View style={topBarStyles.container}>
-        <Pressable onPress={onBack} style={topBarStyles.iconButton}>
+        <Pressable onPress={() => navigation.goBack()} style={topBarStyles.iconButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="arrow-back" size={20} color={colors.text} />
         </Pressable>
 
@@ -971,7 +971,7 @@ export default function Workspace({ onBack }) {
           </Text>
         </View>
 
-        <Pressable onPress={handleExport} style={topBarStyles.iconButton}>
+        <Pressable onPress={handleExport} style={topBarStyles.iconButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="share-outline" size={20} color={colors.accent} />
         </Pressable>
       </View>
@@ -1390,54 +1390,82 @@ export default function Workspace({ onBack }) {
         visible={showAuthSheet}
         onRequestClose={() => setShowAuthSheet(false)}
       >
-        <View style={modalStyles.overlay}>
-          <View style={modalStyles.sheet}>
-            <View style={modalStyles.handle} />
-            <Text style={modalStyles.sheetEyebrow}>Save & Export</Text>
-            <Text style={modalStyles.sheetTitle}>
-              Sign up to save your high-resolution creation directly to your
-              gallery with no ads and no watermarks.
-            </Text>
+        <KeyboardAvoidingView
+          style={modalStyles.overlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        >
+          <Pressable
+            style={{ flex: 1 }}
+            onPress={() => setShowAuthSheet(false)}
+          />
+          <View style={[modalStyles.sheet, { maxHeight: "85%" }]}>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+              automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+              contentContainerStyle={{ paddingBottom: spacing.lg }}
+            >
+              <View style={modalStyles.handle} />
+              <Text style={modalStyles.sheetEyebrow}>Save & Export</Text>
+              <Text style={modalStyles.sheetTitle}>
+                Sign up to save your high-resolution creation directly to your
+                gallery with no ads and no watermarks.
+              </Text>
 
-            <TextInput
-              placeholder="Name"
-              placeholderTextColor={colors.textSoft}
-              style={modalStyles.input}
-              value={formValues.name}
-              onChangeText={(v) => updateField("name", v)}
-            />
-            <TextInput
-              placeholder="Email"
-              placeholderTextColor={colors.textSoft}
-              keyboardType="email-address"
-              style={modalStyles.input}
-              value={formValues.email}
-              onChangeText={(v) => updateField("email", v)}
-            />
-            <TextInput
-              placeholder="Password"
-              placeholderTextColor={colors.textSoft}
-              secureTextEntry
-              style={modalStyles.input}
-              value={formValues.password}
-              onChangeText={(v) => updateField("password", v)}
-            />
+              <TextInput
+                placeholder="Name"
+                placeholderTextColor={colors.textSoft}
+                style={modalStyles.input}
+                value={formValues.name}
+                onChangeText={(v) => updateField("name", v)}
+                autoCapitalize="words"
+                textContentType="name"
+                returnKeyType="next"
+              />
+              <TextInput
+                placeholder="Email"
+                placeholderTextColor={colors.textSoft}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                textContentType="emailAddress"
+                style={modalStyles.input}
+                value={formValues.email}
+                onChangeText={(v) => updateField("email", v)}
+                returnKeyType="next"
+              />
+              <TextInput
+                placeholder="Password"
+                placeholderTextColor={colors.textSoft}
+                secureTextEntry
+                autoCapitalize="none"
+                textContentType="password"
+                style={modalStyles.input}
+                value={formValues.password}
+                onChangeText={(v) => updateField("password", v)}
+                returnKeyType="done"
+                onSubmitEditing={handleCreateAccount}
+              />
 
-            <View style={modalStyles.actionRow}>
-              <Button
-                label={isSigningUp ? "Creating..." : "Create Account"}
-                onPress={handleCreateAccount}
-                style={modalStyles.halfButton}
-              />
-              <Button
-                label="Maybe Later"
-                variant="secondary"
-                onPress={() => setShowAuthSheet(false)}
-                style={modalStyles.halfButton}
-              />
-            </View>
+              <View style={modalStyles.actionRow}>
+                <Button
+                  label={isSigningUp ? "Creating..." : "Create Account"}
+                  onPress={handleCreateAccount}
+                  style={modalStyles.halfButton}
+                />
+                <Button
+                  label="Maybe Later"
+                  variant="secondary"
+                  onPress={() => setShowAuthSheet(false)}
+                  style={modalStyles.halfButton}
+                />
+              </View>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Exporting modal ────────────────────────────────── */}

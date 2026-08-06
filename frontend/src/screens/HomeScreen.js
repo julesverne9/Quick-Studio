@@ -18,39 +18,53 @@ import {
   layout,
 } from "../styles/styles";
 
-/* ──────────────────────────────────────────────────────────────────── */
+const HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 };
 
-export default function HomeScreen({ onBack, onNewPhotoProject, onNewVideoProject }) {
+export default function HomeScreen({ navigation }) {
   const [showTypeSelector, setShowTypeSelector] = useState(false);
+
+  const openEditor = (tool, extraParams = {}) => {
+    navigation.navigate("Editor", { tool, ...extraParams });
+  };
 
   return (
     <View style={layout.screenContainer}>
-      {/* ── Top bar ──────────────────────────────────────── */}
       <View style={topBarStyles.container}>
-        <Pressable onPress={onBack} style={topBarStyles.iconButton}>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={topBarStyles.iconButton}
+          hitSlop={HIT_SLOP}
+        >
           <Ionicons name="close" size={22} color={colors.text} />
         </Pressable>
 
         <View style={{ flex: 1 }} />
 
-        <Pressable style={topBarStyles.iconButton}>
+        <Pressable
+          style={topBarStyles.iconButton}
+          hitSlop={HIT_SLOP}
+          onPress={() => setShowTypeSelector(true)}
+        >
           <Ionicons name="help-circle-outline" size={22} color={colors.text} />
         </Pressable>
       </View>
 
-      {/* ── Scrollable content ───────────────────────────── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}
       >
-        {/* Quick‑action icon row */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={iconRowStyles.scrollContent}
         >
           {quickActionIcons.map((item) => (
-            <View key={item.id} style={iconRowStyles.item}>
+            <Pressable
+              key={item.id}
+              style={iconRowStyles.item}
+              hitSlop={HIT_SLOP}
+              onPress={() => openEditor(item.id, { source: "quick-action" })}
+            >
               <View style={iconRowStyles.iconBox}>
                 <Ionicons name={item.icon} size={24} color={colors.text} />
                 {item.badge ? (
@@ -60,12 +74,14 @@ export default function HomeScreen({ onBack, onNewPhotoProject, onNewVideoProjec
                 ) : null}
               </View>
               <Text style={iconRowStyles.label}>{item.label}</Text>
-            </View>
+            </Pressable>
           ))}
         </ScrollView>
 
-        {/* New Project banner */}
-        <Pressable onPress={() => setShowTypeSelector(true)}>
+        <Pressable
+          onPress={() => setShowTypeSelector(true)}
+          hitSlop={HIT_SLOP}
+        >
           <View style={bannerStyles.container}>
             <View style={bannerStyles.background}>
               <View style={bannerStyles.orbLeft} />
@@ -79,7 +95,6 @@ export default function HomeScreen({ onBack, onNewPhotoProject, onNewVideoProjec
           </View>
         </Pressable>
 
-        {/* Tutorials card */}
         <View style={tutorialsStyles.container}>
           <View style={tutorialsStyles.header}>
             <Ionicons
@@ -92,22 +107,29 @@ export default function HomeScreen({ onBack, onNewPhotoProject, onNewVideoProjec
 
           {tutorialItems.map((item, index) => (
             <View key={index} style={tutorialsStyles.item}>
-              <Text style={tutorialsStyles.bullet}>·</Text>
+              <Text style={tutorialsStyles.bullet}>.</Text>
               <Text style={tutorialsStyles.itemText}>{item}</Text>
             </View>
           ))}
         </View>
 
-        {/* Template category sections */}
         {inspirationSections.map((section) => (
           <View key={section.id} style={templateStyles.section}>
-            {/* Section header */}
             <View style={templateStyles.header}>
               <View style={templateStyles.titleRow}>
                 <Text style={templateStyles.title}>{section.title}</Text>
                 <Text style={templateStyles.count}>({section.count})</Text>
               </View>
-              <Pressable style={layout.row}>
+              <Pressable
+                style={layout.row}
+                hitSlop={HIT_SLOP}
+                onPress={() =>
+                  openEditor(section.id, {
+                    source: "view-more",
+                    sectionTitle: section.title,
+                  })
+                }
+              >
                 <Text style={templateStyles.viewMore}>View More </Text>
                 <Ionicons
                   name="chevron-forward"
@@ -117,17 +139,24 @@ export default function HomeScreen({ onBack, onNewPhotoProject, onNewVideoProjec
               </Pressable>
             </View>
 
-            {/* Blank template card (ultra-wide section) */}
             {section.hasBlankTemplate ? (
-              <View style={templateStyles.blankCard}>
+              <Pressable
+                style={templateStyles.blankCard}
+                hitSlop={HIT_SLOP}
+                onPress={() =>
+                  openEditor("blank-template", {
+                    source: "blank-template",
+                    sectionId: section.id,
+                  })
+                }
+              >
                 <Text style={templateStyles.blankLabel}>Blank Template</Text>
                 <View style={templateStyles.blankPlayButton}>
                   <Ionicons name="play" size={14} color="#fff" />
                 </View>
-              </View>
+              </Pressable>
             ) : null}
 
-            {/* Thumbnail scroll row */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -137,33 +166,41 @@ export default function HomeScreen({ onBack, onNewPhotoProject, onNewVideoProjec
               ]}
             >
               {[1, 2, 3, 4].map((card) => (
-                <View key={`${section.id}-${card}`} style={templateStyles.card}>
+                <Pressable
+                  key={`${section.id}-${card}`}
+                  style={templateStyles.card}
+                  hitSlop={HIT_SLOP}
+                  onPress={() =>
+                    openEditor(`${section.id}-template-${card}`, {
+                      source: "template-card",
+                      sectionId: section.id,
+                      templateIndex: card,
+                    })
+                  }
+                >
                   <View style={templateStyles.cardThumb}>
-                    {/* Film‑strip borders */}
                     <View style={[templateStyles.filmBorder, { left: 0 }]}>
-                      {[1, 2, 3, 4, 5].map((h) => (
-                        <View key={h} style={templateStyles.filmHole} />
+                      {[1, 2, 3, 4, 5].map((hole) => (
+                        <View key={hole} style={templateStyles.filmHole} />
                       ))}
                     </View>
                     <View style={[templateStyles.filmBorder, { right: 0 }]}>
-                      {[1, 2, 3, 4, 5].map((h) => (
-                        <View key={h} style={templateStyles.filmHole} />
+                      {[1, 2, 3, 4, 5].map((hole) => (
+                        <View key={hole} style={templateStyles.filmHole} />
                       ))}
                     </View>
 
-                    {/* Play button */}
                     <View style={templateStyles.playButton}>
                       <Ionicons name="play" size={14} color="#fff" />
                     </View>
                   </View>
-                </View>
+                </Pressable>
               ))}
             </ScrollView>
           </View>
         ))}
       </ScrollView>
 
-      {/* Project Type Selector Modal */}
       <Modal
         animationType="slide"
         transparent
@@ -182,7 +219,9 @@ export default function HomeScreen({ onBack, onNewPhotoProject, onNewVideoProjec
               <Pressable
                 onPress={() => {
                   setShowTypeSelector(false);
-                  onNewVideoProject();
+                  navigation.navigate("VideoEditor", {
+                    tool: "new-project-video",
+                  });
                 }}
                 style={{
                   flexDirection: "row",
@@ -193,12 +232,29 @@ export default function HomeScreen({ onBack, onNewPhotoProject, onNewVideoProjec
                   borderWidth: 1,
                   borderColor: colors.borderStrong,
                 }}
+                hitSlop={HIT_SLOP}
               >
-                <Ionicons name="film" size={24} color={colors.accent} style={{ marginRight: spacing.md }} />
+                <Ionicons
+                  name="film"
+                  size={24}
+                  color={colors.accent}
+                  style={{ marginRight: spacing.md }}
+                />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}>Video Editor</Text>
-                  <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 2 }}>
-                    Multi-track timeline, keyframes, transitions, filters, and speed curves.
+                  <Text
+                    style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}
+                  >
+                    Video Editor
+                  </Text>
+                  <Text
+                    style={{
+                      color: colors.textMuted,
+                      fontSize: 12,
+                      marginTop: 2,
+                    }}
+                  >
+                    Multi-track timeline, keyframes, transitions, filters, and
+                    speed curves.
                   </Text>
                 </View>
               </Pressable>
@@ -206,7 +262,9 @@ export default function HomeScreen({ onBack, onNewPhotoProject, onNewVideoProjec
               <Pressable
                 onPress={() => {
                   setShowTypeSelector(false);
-                  onNewPhotoProject();
+                  openEditor("new-project-photo", {
+                    source: "project-type-selector",
+                  });
                 }}
                 style={{
                   flexDirection: "row",
@@ -217,12 +275,29 @@ export default function HomeScreen({ onBack, onNewPhotoProject, onNewVideoProjec
                   borderWidth: 1,
                   borderColor: colors.borderStrong,
                 }}
+                hitSlop={HIT_SLOP}
               >
-                <Ionicons name="image" size={24} color={colors.success} style={{ marginRight: spacing.md }} />
+                <Ionicons
+                  name="image"
+                  size={24}
+                  color={colors.success}
+                  style={{ marginRight: spacing.md }}
+                />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}>Photo Editor</Text>
-                  <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 2 }}>
-                    Apply filters and adjust brightness, contrast, and saturation.
+                  <Text
+                    style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}
+                  >
+                    Photo Editor
+                  </Text>
+                  <Text
+                    style={{
+                      color: colors.textMuted,
+                      fontSize: 12,
+                      marginTop: 2,
+                    }}
+                  >
+                    Apply filters and adjust brightness, contrast, and
+                    saturation.
                   </Text>
                 </View>
               </Pressable>
@@ -236,8 +311,17 @@ export default function HomeScreen({ onBack, onNewPhotoProject, onNewVideoProjec
                   alignItems: "center",
                   marginTop: spacing.sm,
                 }}
+                hitSlop={HIT_SLOP}
               >
-                <Text style={{ color: colors.textMuted, fontSize: 14, fontWeight: "700" }}>Cancel</Text>
+                <Text
+                  style={{
+                    color: colors.textMuted,
+                    fontSize: 14,
+                    fontWeight: "700",
+                  }}
+                >
+                  Cancel
+                </Text>
               </Pressable>
             </View>
           </View>

@@ -1,5 +1,6 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
+
 const User = require("../models/User");
 const { protectRoute } = require("../middleware/authMiddleware");
 
@@ -8,7 +9,6 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "development_jwt_secret";
 const JWT_EXPIRES_IN = "7d";
 
-/* ── Helper: build a standardised auth response ──────────────────── */
 const generateToken = (user) =>
   jwt.sign(
     {
@@ -31,12 +31,10 @@ const buildAuthResponse = (user, token) => ({
   },
 });
 
-/* ── POST /api/auth/register ─────────────────────────────────────── */
-router.post("/register", async (req, res) => {
+const registerHandler = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Validation
     if (!name?.trim() || !email?.trim() || !password) {
       return res.status(400).json({
         message: "Name, email, and password are all required.",
@@ -49,17 +47,16 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    // Check for existing user
     const existingUser = await User.findOne({
       email: email.trim().toLowerCase(),
     });
+
     if (existingUser) {
       return res.status(409).json({
         message: "An account with that email already exists.",
       });
     }
 
-    // Create user (password is auto-hashed by the pre-save hook)
     const user = await User.create({
       name: name.trim(),
       email: email.trim().toLowerCase(),
@@ -73,20 +70,22 @@ router.post("/register", async (req, res) => {
       ...buildAuthResponse(user, token),
     });
   } catch (error) {
-    // Catch Mongoose duplicate key race condition
     if (error?.code === 11000) {
       return res.status(409).json({
         message: "An account with that email already exists.",
       });
     }
+
     console.error("Register error:", error);
     return res.status(500).json({
       message: "Unable to create account right now.",
     });
   }
-});
+};
 
-/* ── POST /api/auth/login ────────────────────────────────────────── */
+router.post("/register", registerHandler);
+router.post("/signup", registerHandler);
+
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -97,7 +96,6 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // .select('+password') overrides the schema-level `select: false`
     const user = await User.findOne({
       email: email.trim().toLowerCase(),
     }).select("+password");
@@ -129,10 +127,8 @@ router.post("/login", async (req, res) => {
   }
 });
 
-/* ── GET /api/auth/me  (protected — session revalidation) ────────── */
 router.get("/me", protectRoute, async (req, res) => {
   try {
-    // req.user is already populated by protectRoute middleware (minus password)
     return res.status(200).json({
       user: {
         id: req.user._id,

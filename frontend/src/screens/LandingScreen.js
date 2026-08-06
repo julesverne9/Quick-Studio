@@ -12,29 +12,22 @@ const FEATURE_COLORS = {
   success: colors.success,
 };
 
-export default function LandingScreen({ onGetStarted }) {
+export default function LandingScreen({ navigation }) {
   return (
     <View style={layout.screenContainer}>
-      {/* ── Centered branding ──────────────────────────────── */}
       <View style={layout.centeredFull}>
-        {/* Logo icon */}
         <View style={landingStyles.logoContainer}>
           <Ionicons name="videocam" size={38} color={colors.accent} />
         </View>
 
-        {/* App title */}
         <Text style={textStyles.appTitle}>QuickStudio</Text>
-
-        {/* Accent divider */}
         <View style={landingStyles.accentLine} />
 
-        {/* Tagline */}
         <Text style={landingStyles.tagline}>
           Professional video editing, simplified.{"\n"}Create stunning content
           in minutes.
         </Text>
 
-        {/* Feature pills */}
         <View style={landingStyles.featureGrid}>
           {landingFeatures.map((feature) => (
             <View key={feature.id} style={landingStyles.featurePill}>
@@ -49,9 +42,11 @@ export default function LandingScreen({ onGetStarted }) {
         </View>
       </View>
 
-      {/* ── Bottom CTA ─────────────────────────────────────── */}
       <View style={landingStyles.ctaDock}>
-        <Button label="Get Started" onPress={onGetStarted} />
+        <Button
+          label="Get Started"
+          onPress={() => navigation.navigate("Home")}
+        />
       </View>
     </View>
   );

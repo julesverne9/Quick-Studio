@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -45,6 +46,10 @@ export default function AuthModal({ visible, onClose, initialTab }) {
     resetForm();
     onClose?.();
   };
+
+  useEffect(() => {
+    setActiveTab(initialTab || TABS.LOGIN);
+  }, [initialTab, visible]);
 
   /* ── Submit ───────────────────────────────────────────────────── */
   const handleSubmit = async () => {
@@ -96,156 +101,176 @@ export default function AuthModal({ visible, onClose, initialTab }) {
       <KeyboardAvoidingView
         style={styles.overlay}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
         <Pressable style={styles.backdrop} onPress={handleClose} />
 
         <View style={styles.sheet}>
-          {/* ── Drag handle ──────────────────────────────────────── */}
-          <View style={styles.handleBar} />
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+            automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            contentContainerStyle={styles.scrollContent}
+          >
+            {/* ── Drag handle ──────────────────────────────────────── */}
+            <View style={styles.handleBar} />
 
-          {/* ── Header ───────────────────────────────────────────── */}
-          <Text style={styles.title}>
-            {activeTab === TABS.LOGIN
-              ? "Welcome Back"
-              : "Create Account"}
-          </Text>
-          <Text style={styles.subtitle}>
-            {activeTab === TABS.LOGIN
-              ? "Sign in to export your creations"
-              : "Join QuickStudio to save & export"}
-          </Text>
+            {/* ── Header ───────────────────────────────────────────── */}
+            <Text style={styles.title}>
+              {activeTab === TABS.LOGIN
+                ? "Welcome Back"
+                : "Create Account"}
+            </Text>
+            <Text style={styles.subtitle}>
+              {activeTab === TABS.LOGIN
+                ? "Sign in to export your creations"
+                : "Join QuickStudio to save & export"}
+            </Text>
 
-          {/* ── Tab switcher ─────────────────────────────────────── */}
-          <View style={styles.tabBar}>
-            <Pressable
-              style={[
-                styles.tab,
-                activeTab === TABS.LOGIN && styles.tabActive,
-              ]}
-              onPress={() => switchTab(TABS.LOGIN)}
-            >
-              <Text
+            {/* ── Tab switcher ─────────────────────────────────────── */}
+            <View style={styles.tabBar}>
+              <Pressable
                 style={[
-                  styles.tabLabel,
-                  activeTab === TABS.LOGIN && styles.tabLabelActive,
+                  styles.tab,
+                  activeTab === TABS.LOGIN && styles.tabActive,
                 ]}
+                onPress={() => switchTab(TABS.LOGIN)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                Login
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[
-                styles.tab,
-                activeTab === TABS.REGISTER && styles.tabActive,
-              ]}
-              onPress={() => switchTab(TABS.REGISTER)}
-            >
-              <Text
+                <Text
+                  style={[
+                    styles.tabLabel,
+                    activeTab === TABS.LOGIN && styles.tabLabelActive,
+                  ]}
+                >
+                  Login
+                </Text>
+              </Pressable>
+              <Pressable
                 style={[
-                  styles.tabLabel,
-                  activeTab === TABS.REGISTER && styles.tabLabelActive,
+                  styles.tab,
+                  activeTab === TABS.REGISTER && styles.tabActive,
                 ]}
+                onPress={() => switchTab(TABS.REGISTER)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                Register
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* ── Error banner ────────────────────────────────────── */}
-          {error ? (
-            <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>{error}</Text>
+                <Text
+                  style={[
+                    styles.tabLabel,
+                    activeTab === TABS.REGISTER && styles.tabLabelActive,
+                  ]}
+                >
+                  Register
+                </Text>
+              </Pressable>
             </View>
-          ) : null}
 
-          {/* ── Form fields ─────────────────────────────────────── */}
-          {activeTab === TABS.REGISTER && (
+            {/* ── Error banner ────────────────────────────────────── */}
+            {error ? (
+              <View style={styles.errorBanner}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
+            {/* ── Form fields ─────────────────────────────────────── */}
+            {activeTab === TABS.REGISTER && (
+              <TextInput
+                style={styles.input}
+                placeholder="Full name"
+                placeholderTextColor={colors.textSoft}
+                value={name}
+                onChangeText={setName}
+                autoCapitalize="words"
+                textContentType="name"
+                returnKeyType="next"
+              />
+            )}
+
             <TextInput
               style={styles.input}
-              placeholder="Full name"
+              placeholder="Email address"
               placeholderTextColor={colors.textSoft}
-              value={name}
-              onChangeText={setName}
-              autoCapitalize="words"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="emailAddress"
               returnKeyType="next"
             />
-          )}
 
-          <TextInput
-            style={styles.input}
-            placeholder="Email address"
-            placeholderTextColor={colors.textSoft}
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="next"
-          />
-
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor={colors.textSoft}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            returnKeyType={activeTab === TABS.REGISTER ? "next" : "done"}
-            onSubmitEditing={
-              activeTab === TABS.LOGIN ? handleSubmit : undefined
-            }
-          />
-
-          {activeTab === TABS.REGISTER && (
             <TextInput
               style={styles.input}
-              placeholder="Confirm password"
+              placeholder="Password"
               placeholderTextColor={colors.textSoft}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
+              value={password}
+              onChangeText={setPassword}
               secureTextEntry
-              returnKeyType="done"
-              onSubmitEditing={handleSubmit}
+              autoCapitalize="none"
+              textContentType="password"
+              returnKeyType={activeTab === TABS.REGISTER ? "next" : "done"}
+              onSubmitEditing={
+                activeTab === TABS.LOGIN ? handleSubmit : undefined
+              }
             />
-          )}
 
-          {/* ── Submit button ───────────────────────────────────── */}
-          <Pressable
-            style={({ pressed }) => [
-              styles.submitButton,
-              pressed && styles.submitPressed,
-              loading && styles.submitDisabled,
-            ]}
-            onPress={handleSubmit}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color={colors.primaryText} size="small" />
-            ) : (
-              <Text style={styles.submitLabel}>
-                {activeTab === TABS.LOGIN ? "Sign In" : "Create Account"}
-              </Text>
+            {activeTab === TABS.REGISTER && (
+              <TextInput
+                style={styles.input}
+                placeholder="Confirm password"
+                placeholderTextColor={colors.textSoft}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry
+                autoCapitalize="none"
+                textContentType="password"
+                returnKeyType="done"
+                onSubmitEditing={handleSubmit}
+              />
             )}
-          </Pressable>
 
-          {/* ── Footer toggle ───────────────────────────────────── */}
-          <Pressable
-            style={styles.footerToggle}
-            onPress={() =>
-              switchTab(
-                activeTab === TABS.LOGIN ? TABS.REGISTER : TABS.LOGIN
-              )
-            }
-          >
-            <Text style={styles.footerText}>
-              {activeTab === TABS.LOGIN
-                ? "Don't have an account? "
-                : "Already have an account? "}
-              <Text style={styles.footerLink}>
-                {activeTab === TABS.LOGIN ? "Register" : "Sign In"}
+            {/* ── Submit button ───────────────────────────────────── */}
+            <Pressable
+              style={({ pressed }) => [
+                styles.submitButton,
+                pressed && styles.submitPressed,
+                loading && styles.submitDisabled,
+              ]}
+              onPress={handleSubmit}
+              disabled={loading}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              {loading ? (
+                <ActivityIndicator color={colors.primaryText} size="small" />
+              ) : (
+                <Text style={styles.submitLabel}>
+                  {activeTab === TABS.LOGIN ? "Sign In" : "Create Account"}
+                </Text>
+              )}
+            </Pressable>
+
+            {/* ── Footer toggle ───────────────────────────────────── */}
+            <Pressable
+              style={styles.footerToggle}
+              onPress={() =>
+                switchTab(
+                  activeTab === TABS.LOGIN ? TABS.REGISTER : TABS.LOGIN
+                )
+              }
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.footerText}>
+                {activeTab === TABS.LOGIN
+                  ? "Don't have an account? "
+                  : "Already have an account? "}
+                <Text style={styles.footerLink}>
+                  {activeTab === TABS.LOGIN ? "Register" : "Sign In"}
+                </Text>
               </Text>
-            </Text>
-          </Pressable>
+            </Pressable>
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -272,6 +297,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderBottomWidth: 0,
     borderColor: colors.border,
+    maxHeight: "85%",
+  },
+  scrollContent: {
+    paddingBottom: spacing.lg,
   },
   handleBar: {
     alignSelf: "center",
