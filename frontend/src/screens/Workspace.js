@@ -4,21 +4,18 @@ import {
   Alert,
   Dimensions,
   Image,
-  KeyboardAvoidingView,
   Linking,
   Modal,
   PanResponder,
-  Platform,
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import axios from "axios";
 import {
   ColorMatrix,
@@ -31,6 +28,7 @@ import {
 } from "react-native-color-matrix-image-filters";
 
 import Button from "../components/ui/Button";
+import { useAuth } from "../context/AuthContext";
 import { colors, spacing, radius } from "../theme/tokens";
 import {
   layout,
@@ -150,7 +148,37 @@ const DEFAULT_GEOMETRY = {
 };
 
 const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL || "http://192.168.29.149:5000";
+  process.env.EXPO_PUBLIC_API_URL || "http://192.168.0.15:5000";
+
+const getPickerConfig = (tool) => {
+  if (tool === "new-project-photo") {
+    return {
+      mediaTypes: ["images"],
+      assetLabel: "photo",
+      assetLabelPlural: "photos",
+      buttonLabel: "Select Photo",
+      icon: "image-outline",
+    };
+  }
+
+  if (tool === "new-project-video") {
+    return {
+      mediaTypes: ["videos"],
+      assetLabel: "video",
+      assetLabelPlural: "videos",
+      buttonLabel: "Select Video",
+      icon: "videocam-outline",
+    };
+  }
+
+  return {
+    mediaTypes: ["images", "videos"],
+    assetLabel: "file",
+    assetLabelPlural: "files",
+    buttonLabel: "Select File",
+    icon: "folder-open-outline",
+  };
+};
 
 /* ═══════════════════════════════════════════════════════════════════════
    Reusable adjustment slider (shared between Adjust and Transform tabs)
@@ -464,6 +492,12 @@ function CropOverlay({ cropRect, setCropRect, containerSize }) {
 
 export default function Workspace() {
   const navigation = useNavigation();
+  const route = useRoute();
+  const { isAuthenticated, token, user } = useAuth();
+  const pickerConfig = useMemo(
+    () => getPickerConfig(route.params?.tool),
+    [route.params?.tool]
+  );
   const [asset, setAsset] = useState(null);
   const [activeTab, setActiveTab] = useState("presets");
   const [activePreset, setActivePreset] = useState("original");
@@ -483,17 +517,9 @@ export default function Workspace() {
   /* Video playback state */
   const [isVideoPlaying, setIsVideoPlaying] = useState(true);
 
-  /* Auth state */
-  const [authSession, setAuthSession] = useState(null);
-  const [showAuthSheet, setShowAuthSheet] = useState(false);
-  const [isSigningUp, setIsSigningUp] = useState(false);
+  /* Export state */
   const [isExporting, setIsExporting] = useState(false);
   const [exportResult, setExportResult] = useState(null);
-  const [formValues, setFormValues] = useState({
-    name: "",
-    email: "",
-    password: "",
-  });
 
   /* ── Video player (expo-video) ───────────────────────────────── */
 
@@ -595,13 +621,13 @@ export default function Workspace() {
     if (!permissionResult.granted) {
       Alert.alert(
         "Gallery access needed",
-        "Please allow gallery access so QuickStudio can load your photo or video."
+        `Please allow gallery access so QuickStudio can load your ${pickerConfig.assetLabelPlural}.`
       );
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      mediaTypes: pickerConfig.mediaTypes,
       allowsEditing: false,
       quality: 1,
     });
@@ -678,15 +704,21 @@ export default function Workspace() {
   /* ── Export handler ──────────────────────────────────────────────── */
 
   const handleExport = async () => {
-    if (!authSession?.token) {
-      setShowAuthSheet(true);
+    if (!isAuthenticated || !token) {
+      navigation.navigate("Auth", {
+        mode: "signIn",
+        returnTo: {
+          name: "Editor",
+          params: route.params || {},
+        },
+      });
       return;
     }
 
     if (!asset) {
       Alert.alert(
-        "No Media",
-        "Please select a photo or video first."
+        "No File",
+        `Please select a ${pickerConfig.assetLabel} first.`
       );
       return;
     }
@@ -706,14 +738,14 @@ export default function Workspace() {
         formData.append("brightness", String(adjustments.brightness));
         formData.append("contrast", String(adjustments.contrast));
         formData.append("saturation", String(adjustments.saturation));
-        formData.append("guestDeviceId", authSession.user.id);
+        formData.append("guestDeviceId", user?.id || "authenticated_device");
 
         const response = await axios.post(
           `${API_BASE_URL}/api/video/process`,
           formData,
           {
             headers: {
-              Authorization: `Bearer ${authSession.token}`,
+              Authorization: `Bearer ${token}`,
               "Content-Type": "multipart/form-data",
             },
             timeout: 120000, // 120s — FFmpeg rendering can take time
@@ -762,14 +794,14 @@ export default function Workspace() {
           formData.append("previewHeight", String(Math.round(previewSize.height)));
         }
 
-        formData.append("guestDeviceId", authSession.user.id);
+        formData.append("guestDeviceId", user?.id || "authenticated_device");
 
         const response = await axios.post(
           `${API_BASE_URL}/api/projects/render`,
           formData,
           {
             headers: {
-              Authorization: `Bearer ${authSession.token}`,
+              Authorization: `Bearer ${token}`,
               "Content-Type": "multipart/form-data",
             },
           }
@@ -790,75 +822,12 @@ export default function Workspace() {
     }
   };
 
-  const updateField = (field, value) => {
-    setFormValues((current) => ({ ...current, [field]: value }));
-  };
-
   const updateAdjustment = (key, value) => {
     setAdjustments((prev) => ({ ...prev, [key]: value }));
   };
 
   const resetAdjustments = () => {
     setAdjustments(DEFAULT_ADJUSTMENTS);
-  };
-
-  const handleCreateAccount = async () => {
-    const name = formValues.name.trim();
-    const email = formValues.email.trim().toLowerCase();
-    const password = formValues.password;
-
-    if (!name || !email || !password) {
-      Alert.alert("Missing Details", "Please complete all three fields.");
-      return;
-    }
-
-    setIsSigningUp(true);
-
-    try {
-      const response = await axios.post(
-        `${API_BASE_URL}/api/auth/register`,
-        {
-          name,
-          email,
-          password,
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      const payload = response.data;
-
-      setAuthSession({
-        token: payload.token,
-        user: payload.user,
-      });
-      setShowAuthSheet(false);
-      setFormValues({
-        name: "",
-        email: "",
-        password: "",
-      });
-
-      Alert.alert(
-        "Account Created",
-        `${payload.user.name}, your details have been saved and export is now unlocked.`
-      );
-    } catch (error) {
-      const message =
-        error.response?.data?.message ||
-        error.message ||
-        "We couldn't create your account. Please try again in a moment.";
-
-      Alert.alert(
-        "Sign Up Failed",
-        message
-      );
-    } finally {
-      setIsSigningUp(false);
-    }
   };
 
   /* ── Tab config ──────────────────────────────────────────────────── */
@@ -967,7 +936,7 @@ export default function Workspace() {
           <Text style={topBarStyles.brandMeta}>
             {asset
               ? `${asset.assetType} loaded`
-              : "Select media to begin"}
+              : `Select ${pickerConfig.assetLabelPlural} to begin`}
           </Text>
         </View>
 
@@ -991,7 +960,7 @@ export default function Workspace() {
             }}
           >
             <Ionicons
-              name="image-outline"
+              name={pickerConfig.icon}
               size={32}
               color={colors.textMuted}
             />
@@ -1017,10 +986,10 @@ export default function Workspace() {
               maxWidth: 280,
             }}
           >
-            Tap below to select a photo or video and begin on the canvas.
+            Tap below to select a {pickerConfig.assetLabel} and begin on the canvas.
           </Text>
           <Button
-            label="Select Photo or Video"
+            label={pickerConfig.buttonLabel}
             onPress={pickAsset}
             style={{ marginTop: spacing.xl, minWidth: 240 }}
           />
@@ -1382,91 +1351,6 @@ export default function Workspace() {
           </View>
         </View>
       )}
-
-      {/* ── Auth modal ─────────────────────────────────────── */}
-      <Modal
-        animationType="slide"
-        transparent
-        visible={showAuthSheet}
-        onRequestClose={() => setShowAuthSheet(false)}
-      >
-        <KeyboardAvoidingView
-          style={modalStyles.overlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
-        >
-          <Pressable
-            style={{ flex: 1 }}
-            onPress={() => setShowAuthSheet(false)}
-          />
-          <View style={[modalStyles.sheet, { maxHeight: "85%" }]}>
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-              automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
-              showsVerticalScrollIndicator={false}
-              bounces={false}
-              contentContainerStyle={{ paddingBottom: spacing.lg }}
-            >
-              <View style={modalStyles.handle} />
-              <Text style={modalStyles.sheetEyebrow}>Save & Export</Text>
-              <Text style={modalStyles.sheetTitle}>
-                Sign up to save your high-resolution creation directly to your
-                gallery with no ads and no watermarks.
-              </Text>
-
-              <TextInput
-                placeholder="Name"
-                placeholderTextColor={colors.textSoft}
-                style={modalStyles.input}
-                value={formValues.name}
-                onChangeText={(v) => updateField("name", v)}
-                autoCapitalize="words"
-                textContentType="name"
-                returnKeyType="next"
-              />
-              <TextInput
-                placeholder="Email"
-                placeholderTextColor={colors.textSoft}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                textContentType="emailAddress"
-                style={modalStyles.input}
-                value={formValues.email}
-                onChangeText={(v) => updateField("email", v)}
-                returnKeyType="next"
-              />
-              <TextInput
-                placeholder="Password"
-                placeholderTextColor={colors.textSoft}
-                secureTextEntry
-                autoCapitalize="none"
-                textContentType="password"
-                style={modalStyles.input}
-                value={formValues.password}
-                onChangeText={(v) => updateField("password", v)}
-                returnKeyType="done"
-                onSubmitEditing={handleCreateAccount}
-              />
-
-              <View style={modalStyles.actionRow}>
-                <Button
-                  label={isSigningUp ? "Creating..." : "Create Account"}
-                  onPress={handleCreateAccount}
-                  style={modalStyles.halfButton}
-                />
-                <Button
-                  label="Maybe Later"
-                  variant="secondary"
-                  onPress={() => setShowAuthSheet(false)}
-                  style={modalStyles.halfButton}
-                />
-              </View>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
 
       {/* ── Exporting modal ────────────────────────────────── */}
       <Modal

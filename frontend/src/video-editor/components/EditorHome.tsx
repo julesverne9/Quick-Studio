@@ -38,13 +38,13 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
     if (!permission.granted) {
       Alert.alert(
         "Gallery Access Needed",
-        "Please allow access to your photos and videos to import clips into the timeline."
+        "Please allow access to your videos to import clips into the timeline."
       );
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      mediaTypes: ["videos"],
       allowsMultipleSelection: true,
       quality: 1,
     });
@@ -344,7 +344,7 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
                   maxWidth: 200,
                 }}
               >
-                Start a new project by picking files from your gallery.
+                Start a new project by picking videos from your gallery.
               </Text>
             </View>
           ) : (

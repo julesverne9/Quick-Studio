@@ -146,4 +146,19 @@ router.get("/me", protectRoute, async (req, res) => {
   }
 });
 
+router.delete("/me", protectRoute, async (req, res) => {
+  try {
+    await User.findByIdAndDelete(req.user._id);
+
+    return res.status(200).json({
+      message: "Account deleted successfully.",
+    });
+  } catch (error) {
+    console.error("Delete account error:", error);
+    return res.status(500).json({
+      message: "Unable to delete account right now.",
+    });
+  }
+});
+
 module.exports = router;

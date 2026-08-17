@@ -188,4 +188,58 @@ router.post('/debug-upload', upload.any(), (req, res) => {
     });
 });
 
+/**
+ * @route   POST /api/video/render
+ * @desc    Queue a timeline-based video compilation job
+ * @access  Public (auth handled at app level)
+ */
+router.post('/render', async (req, res) => {
+    try {
+        const { projectId, name, tracks, durationMs, exportSettings } = req.body;
+
+        if (!projectId) {
+            return res.status(400).json({
+                success: false,
+                error: 'projectId is required.',
+            });
+        }
+
+        // Log the render job to MongoDB
+        const project = new Project({
+            GuestDeviceId: projectId,
+            AssetType: 'video',
+            MobileCanvasMetadata: {
+                name: name || 'Untitled',
+                trackCount: tracks?.length || 0,
+                durationMs: durationMs || 0,
+                exportSettings: exportSettings || {},
+            },
+            Status: 'queued',
+        });
+        await project.save();
+
+        // Notify connected clients that a render job has started
+        const io = req.app.get('socketio');
+        if (io) {
+            io.emit('render-progress', {
+                projectId: project._id.toString(),
+                progress: 0,
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Render job queued successfully.',
+            jobId: project._id,
+            status: 'processing',
+        });
+    } catch (error) {
+        console.error('[Render Route] Error:', error);
+        return res.status(500).json({
+            success: false,
+            error: error.message,
+        });
+    }
+});
+
 module.exports = router;

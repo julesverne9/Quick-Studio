@@ -1,12 +1,23 @@
 import React, { useState } from "react";
-import { Modal, Pressable, ScrollView, Text, View } from "react-native";
+import {
+  Alert,
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { CommonActions } from "@react-navigation/native";
 
 import {
   quickActionIcons,
   tutorialItems,
-  inspirationSections,
 } from "../data/mockContent";
+import ProfileModal from "../components/ProfileModal";
+import { useAuth } from "../context/AuthContext";
+import { templateSections } from "../data/templates";
 import { colors, spacing } from "../theme/tokens";
 import {
   topBarStyles,
@@ -22,9 +33,57 @@ const HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 };
 
 export default function HomeScreen({ navigation }) {
   const [showTypeSelector, setShowTypeSelector] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [isAccountBusy, setIsAccountBusy] = useState(false);
+  const { isAuthenticated, user, logout, deleteAccount } = useAuth();
+
+  const profileInitial = user?.name?.trim()?.charAt(0)?.toUpperCase();
 
   const openEditor = (tool, extraParams = {}) => {
     navigation.navigate("Editor", { tool, ...extraParams });
+  };
+
+  const resetToGuestHome = () => {
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: "Home" }],
+      })
+    );
+  };
+
+  const handleHeaderAccountPress = () => {
+    if (isAuthenticated) {
+      setShowProfileModal(true);
+      return;
+    }
+
+    navigation.navigate("Auth", {
+      mode: "signIn",
+      returnTo: { name: "Home" },
+    });
+  };
+
+  const handleLogout = async () => {
+    setIsAccountBusy(true);
+    await logout();
+    setIsAccountBusy(false);
+    setShowProfileModal(false);
+    resetToGuestHome();
+  };
+
+  const handleDeleteAccount = async () => {
+    setIsAccountBusy(true);
+    const result = await deleteAccount();
+    setIsAccountBusy(false);
+
+    if (!result.success) {
+      Alert.alert("Delete Failed", result.message);
+      return;
+    }
+
+    setShowProfileModal(false);
+    resetToGuestHome();
   };
 
   return (
@@ -43,9 +102,19 @@ export default function HomeScreen({ navigation }) {
         <Pressable
           style={topBarStyles.iconButton}
           hitSlop={HIT_SLOP}
-          onPress={() => setShowTypeSelector(true)}
+          onPress={handleHeaderAccountPress}
         >
-          <Ionicons name="help-circle-outline" size={22} color={colors.text} />
+          {isAuthenticated && profileInitial ? (
+            <Text style={{ color: "#fff", fontSize: 15, fontWeight: "800" }}>
+              {profileInitial}
+            </Text>
+          ) : (
+            <Ionicons
+              name={isAuthenticated ? "person" : "person-circle-outline"}
+              size={22}
+              color={colors.text}
+            />
+          )}
         </Pressable>
       </View>
 
@@ -113,7 +182,7 @@ export default function HomeScreen({ navigation }) {
           ))}
         </View>
 
-        {inspirationSections.map((section) => (
+        {templateSections.map((section) => (
           <View key={section.id} style={templateStyles.section}>
             <View style={templateStyles.header}>
               <View style={templateStyles.titleRow}>
@@ -165,20 +234,31 @@ export default function HomeScreen({ navigation }) {
                 { marginTop: section.hasBlankTemplate ? spacing.sm : 0 },
               ]}
             >
-              {[1, 2, 3, 4].map((card) => (
+              {section.templates.map((template, index) => (
                 <Pressable
-                  key={`${section.id}-${card}`}
+                  key={template.id}
                   style={templateStyles.card}
                   hitSlop={HIT_SLOP}
                   onPress={() =>
-                    openEditor(`${section.id}-template-${card}`, {
+                    openEditor(template.id, {
                       source: "template-card",
                       sectionId: section.id,
-                      templateIndex: card,
+                      templateIndex: index + 1,
                     })
                   }
                 >
                   <View style={templateStyles.cardThumb}>
+                    <Image
+                      source={{ uri: template.thumbnail }}
+                      resizeMode="cover"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        right: 0,
+                        bottom: 0,
+                        left: 0,
+                      }}
+                    />
                     <View style={[templateStyles.filmBorder, { left: 0 }]}>
                       {[1, 2, 3, 4, 5].map((hole) => (
                         <View key={hole} style={templateStyles.filmHole} />
@@ -327,6 +407,15 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      <ProfileModal
+        visible={showProfileModal}
+        user={user}
+        loading={isAccountBusy}
+        onClose={() => setShowProfileModal(false)}
+        onLogout={handleLogout}
+        onDeleteAccount={handleDeleteAccount}
+      />
     </View>
   );
 }

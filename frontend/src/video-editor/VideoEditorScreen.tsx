@@ -9,11 +9,12 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import { useDispatch, useSelector } from "react-redux";
 import io from "socket.io-client";
 import axios from "axios";
 
+import { useAuth } from "../context/AuthContext";
 import { colors, spacing } from "../theme/tokens";
 import {
   undo,
@@ -32,10 +33,12 @@ import Controls from "./components/Controls";
 import EditorHome from "./components/EditorHome";
 
 const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL || "http://192.168.29.149:5000";
+  process.env.EXPO_PUBLIC_API_URL || "http://192.168.0.15:5000";
 
 export default function VideoEditorScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const { isAuthenticated, token } = useAuth();
   const dispatch = useDispatch();
 
   const currentProject = useSelector((state: any) => state.videoEditor.currentProject);
@@ -95,19 +98,39 @@ export default function VideoEditorScreen() {
   const triggerExport = async () => {
     if (!currentProject) return;
 
+    if (!isAuthenticated || !token) {
+      setShowExportModal(false);
+      navigation.navigate("Auth", {
+        mode: "signIn",
+        returnTo: {
+          name: "VideoEditor",
+          params: route.params || {},
+        },
+      });
+      return;
+    }
+
     setIsExporting(true);
     setExportProgress(0);
     setExportedVideoUrl(null);
 
     try {
       // Trigger background compilation on backend
-      const response = await axios.post(`${API_BASE_URL}/api/video/render`, {
-        projectId: currentProject.id,
-        name: currentProject.name,
-        tracks: currentProject.tracks,
-        durationMs: currentProject.durationMs,
-        exportSettings: exportSettings,
-      });
+      const response = await axios.post(
+        `${API_BASE_URL}/api/video/render`,
+        {
+          projectId: currentProject.id,
+          name: currentProject.name,
+          tracks: currentProject.tracks,
+          durationMs: currentProject.durationMs,
+          exportSettings: exportSettings,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
       if (response.data.success) {
         // Render completed (or running in bg)

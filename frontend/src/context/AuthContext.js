@@ -6,11 +6,8 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import { Alert, Platform } from "react-native";
 import axios from "axios";
 
-/* ── Secure storage abstraction ──────────────────────────────────── */
-// expo-secure-store is not available on web; fall back to a no-op for dev.
 let SecureStore;
 try {
   SecureStore = require("expo-secure-store");
@@ -19,29 +16,10 @@ try {
 }
 
 const TOKEN_KEY = "quickstudio_jwt";
+const USER_KEY = "quickstudio_user";
 
-const saveToken = async (token) => {
-  if (SecureStore) {
-    await SecureStore.setItemAsync(TOKEN_KEY, token);
-  }
-};
-
-const getToken = async () => {
-  if (SecureStore) {
-    return SecureStore.getItemAsync(TOKEN_KEY);
-  }
-  return null;
-};
-
-const deleteToken = async () => {
-  if (SecureStore) {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-  }
-};
-
-/* ── API client ────────────────────────────────────────────── */
 const API_BASE =
-  process.env.EXPO_PUBLIC_API_URL || "http://192.168.29.149:5000";
+  process.env.EXPO_PUBLIC_API_URL || "http://192.168.0.15:5000";
 
 const api = axios.create({
   baseURL: `${API_BASE}/api`,
@@ -49,15 +27,88 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-/* ── Context ─────────────────────────────────────────────────────── */
+const CONNECTION_ERROR_MESSAGE =
+  "Unable to reach the server. Please check your internet connection or IP configuration.";
+
+const buildAuthError = (error, fallbackMessage) => {
+  // Timeout error
+  if (error.code === "ECONNABORTED") {
+    return {
+      success: false,
+      title: "Request Timeout",
+      message:
+        "The server took too long to respond. Please check your connection and try again.",
+      isNetworkError: true,
+    };
+  }
+
+  // No response at all (network error, DNS failure, etc.)
+  if (!error.response) {
+    return {
+      success: false,
+      title: "Connection Error",
+      message: CONNECTION_ERROR_MESSAGE,
+      isNetworkError: true,
+    };
+  }
+
+  // Non-JSON response (e.g. localtunnel HTML warning page)
+  const contentType = error.response.headers?.["content-type"] || "";
+  if (!contentType.includes("application/json")) {
+    return {
+      success: false,
+      title: "Connection Error",
+      message:
+        "Received an unexpected response from the server. If using a tunnel, visit the tunnel URL in a browser first to accept any warning pages.",
+      isNetworkError: true,
+    };
+  }
+
+  return {
+    success: false,
+    title: "Authentication Failed",
+    status: error.response.status,
+    message: error.response.data?.message || fallbackMessage,
+  };
+};
+
+const saveSession = async ({ token, user }) => {
+  if (!SecureStore) return;
+
+  await SecureStore.setItemAsync(TOKEN_KEY, token);
+  await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user));
+};
+
+const getStoredSession = async () => {
+  if (!SecureStore) return { token: null, user: null };
+
+  const [storedToken, storedUser] = await Promise.all([
+    SecureStore.getItemAsync(TOKEN_KEY),
+    SecureStore.getItemAsync(USER_KEY),
+  ]);
+
+  return {
+    token: storedToken,
+    user: storedUser ? JSON.parse(storedUser) : null,
+  };
+};
+
+const deleteSession = async () => {
+  if (!SecureStore) return;
+
+  await Promise.all([
+    SecureStore.deleteItemAsync(TOKEN_KEY),
+    SecureStore.deleteItemAsync(USER_KEY),
+  ]);
+};
+
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
-  const [isLoading, setIsLoading] = useState(true); // true until initial session check completes
+  const [isLoading, setIsLoading] = useState(true);
 
-  /* ── Attach token to every outgoing request ──────────────────── */
   useEffect(() => {
     const interceptor = api.interceptors.request.use((config) => {
       if (token) {
@@ -65,29 +116,32 @@ export function AuthProvider({ children }) {
       }
       return config;
     });
+
     return () => api.interceptors.request.eject(interceptor);
   }, [token]);
 
-  /* ── Session revalidation on cold-start ──────────────────────── */
   useEffect(() => {
     (async () => {
       try {
-        const stored = await getToken();
-        if (!stored) {
+        const stored = await getStoredSession();
+        if (!stored.token) {
           setIsLoading(false);
           return;
         }
 
-        // Verify with backend & get fresh user data (incl. current tier)
+        setToken(stored.token);
+        if (stored.user) {
+          setUser(stored.user);
+        }
+
         const { data } = await api.get("/auth/me", {
-          headers: { Authorization: `Bearer ${stored}` },
+          headers: { Authorization: `Bearer ${stored.token}` },
         });
 
-        setToken(stored);
         setUser(data.user);
+        await saveSession({ token: stored.token, user: data.user });
       } catch {
-        // Token is expired / invalid → clear it silently
-        await deleteToken();
+        await deleteSession();
         setToken(null);
         setUser(null);
       } finally {
@@ -96,48 +150,65 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
-  /* ── Register ────────────────────────────────────────────────── */
-  const register = useCallback(async (name, email, password) => {
-    try {
-      const { data } = await api.post("/auth/register", {
-        name,
-        email,
-        password,
-      });
-      await saveToken(data.token);
-      setToken(data.token);
-      setUser(data.user);
-      return { success: true };
-    } catch (error) {
-      const msg =
-        error.response?.data?.message || "Registration failed. Please try again.";
-      return { success: false, message: msg };
-    }
+  const applyAuthPayload = useCallback(async (data) => {
+    await saveSession({ token: data.token, user: data.user });
+    setToken(data.token);
+    setUser(data.user);
   }, []);
 
-  /* ── Login ───────────────────────────────────────────────────── */
-  const login = useCallback(async (email, password) => {
-    try {
-      const { data } = await api.post("/auth/login", { email, password });
-      await saveToken(data.token);
-      setToken(data.token);
-      setUser(data.user);
-      return { success: true };
-    } catch (error) {
-      const msg =
-        error.response?.data?.message || "Login failed. Please try again.";
-      return { success: false, message: msg };
-    }
-  }, []);
+  const register = useCallback(
+    async (name, email, password) => {
+      try {
+        const { data } = await api.post("/auth/register", {
+          name,
+          email,
+          password,
+        });
 
-  /* ── Logout ──────────────────────────────────────────────────── */
+        await applyAuthPayload(data);
+        return { success: true, user: data.user, token: data.token };
+      } catch (error) {
+        return buildAuthError(error, "Registration failed. Please try again.");
+      }
+    },
+    [applyAuthPayload]
+  );
+
+  const login = useCallback(
+    async (email, password) => {
+      try {
+        const { data } = await api.post("/auth/login", { email, password });
+
+        await applyAuthPayload(data);
+        return { success: true, user: data.user, token: data.token };
+      } catch (error) {
+        return buildAuthError(error, "Login failed. Please try again.");
+      }
+    },
+    [applyAuthPayload]
+  );
+
   const logout = useCallback(async () => {
-    await deleteToken();
+    await deleteSession();
     setToken(null);
     setUser(null);
   }, []);
 
-  /* ── Pro access check (client-side UX convenience) ───────────── */
+  const deleteAccount = useCallback(async () => {
+    try {
+      await api.delete("/auth/me");
+      await deleteSession();
+      setToken(null);
+      setUser(null);
+      return { success: true };
+    } catch (error) {
+      const message =
+        error.response?.data?.message ||
+        "Unable to delete your account right now.";
+      return { success: false, message };
+    }
+  }, []);
+
   const checkProAccess = useCallback(
     (featureName) => {
       if (!user) return { allowed: false, reason: "not_authenticated" };
@@ -151,26 +222,34 @@ export function AuthProvider({ children }) {
     [user]
   );
 
-  /* ── Memoised context value ──────────────────────────────────── */
   const value = useMemo(
     () => ({
       user,
       token,
       isLoading,
-      isAuthenticated: !!user && !!token,
+      isAuthenticated: Boolean(user && token),
       register,
       login,
       logout,
+      deleteAccount,
       checkProAccess,
-      api, // expose the configured axios instance for other modules
+      api,
     }),
-    [user, token, isLoading, register, login, logout, checkProAccess]
+    [
+      user,
+      token,
+      isLoading,
+      register,
+      login,
+      logout,
+      deleteAccount,
+      checkProAccess,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-/* ── Hook ────────────────────────────────────────────────────────── */
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) {

@@ -2,6 +2,7 @@ import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
 import LandingScreen from "../screens/LandingScreen";
+import AuthScreen from "../screens/AuthScreen";
 import HomeScreen from "../screens/HomeScreen";
 import Workspace from "../screens/Workspace";
 import VideoEditorScreen from "../video-editor/VideoEditorScreen";
@@ -18,6 +19,7 @@ export default function AppNavigator() {
       }}
     >
       <Stack.Screen name="Landing" component={LandingScreen} />
+      <Stack.Screen name="Auth" component={AuthScreen} />
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="Editor" component={Workspace} />
       <Stack.Screen name="VideoEditor" component={VideoEditorScreen} />

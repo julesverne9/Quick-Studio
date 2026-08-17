@@ -1,5 +1,5 @@
 import React from "react";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import Button from "../components/ui/Button";
@@ -47,6 +47,27 @@ export default function LandingScreen({ navigation }) {
           label="Get Started"
           onPress={() => navigation.navigate("Home")}
         />
+        <Pressable
+          onPress={() =>
+            navigation.navigate("Auth", {
+              mode: "signIn",
+              returnTo: { name: "Home" },
+            })
+          }
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={{ alignSelf: "center", paddingVertical: 14 }}
+        >
+          <Text
+            style={{
+              color: colors.accent,
+              fontSize: 14,
+              fontWeight: "700",
+              textAlign: "center",
+            }}
+          >
+            Already have an account? Sign In
+          </Text>
+        </Pressable>
       </View>
     </View>
   );
