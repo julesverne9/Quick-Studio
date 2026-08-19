@@ -39,7 +39,7 @@ const projectSchema = new mongoose.Schema(
     },
     Status: {
       type: String,
-      enum: ["draft", "rendering", "completed"],
+      enum: ["draft", "queued", "rendering", "completed"],
       default: "draft"
     }
   },

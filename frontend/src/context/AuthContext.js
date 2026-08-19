@@ -19,7 +19,7 @@ const TOKEN_KEY = "quickstudio_jwt";
 const USER_KEY = "quickstudio_user";
 
 const API_BASE =
-  process.env.EXPO_PUBLIC_API_URL || "http://192.168.0.15:5000";
+  process.env.EXPO_PUBLIC_API_URL || "https://quickstudio-backend.onrender.com";
 
 const api = axios.create({
   baseURL: `${API_BASE}/api`,

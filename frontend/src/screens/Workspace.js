@@ -148,7 +148,7 @@ const DEFAULT_GEOMETRY = {
 };
 
 const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL || "http://192.168.0.15:5000";
+  process.env.EXPO_PUBLIC_API_URL || "https://quickstudio-backend.onrender.com";
 
 const getPickerConfig = (tool) => {
   if (tool === "new-project-photo") {
