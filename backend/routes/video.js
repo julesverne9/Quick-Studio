@@ -4,7 +4,7 @@ const multer = require('multer');
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
-const Project = require('../models/project');
+const Project = require('../models/Project');
 
 // Inject the automatically downloaded static binary path straight into fluent-ffmpeg
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
