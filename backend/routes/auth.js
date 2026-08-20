@@ -141,10 +141,15 @@ const registerHandler = async (req, res) => {
       isEmailVerified: false,
     });
 
-    // Generate and send OTP
+    // Generate OTP and save to DB
     const otp = user.generateOtp();
     await user.save();
-    await sendOtpEmail(cleanEmail, otp);
+
+    // Fire-and-forget: send email in background so the HTTP response is instant.
+    // If SMTP is slow or fails, the user can still use "Resend Code" on the OTP screen.
+    sendOtpEmail(cleanEmail, otp).catch((err) =>
+      console.error("[Register] OTP email failed (non-blocking):", err.message)
+    );
 
     return res.status(201).json({
       message: "Account created. Please verify your email with the OTP sent.",
@@ -251,7 +256,11 @@ router.post("/resend-otp", async (req, res) => {
 
     const otp = user.generateOtp();
     await user.save();
-    await sendOtpEmail(user.email, otp);
+
+    // Fire-and-forget
+    sendOtpEmail(user.email, otp).catch((err) =>
+      console.error("[Resend] OTP email failed (non-blocking):", err.message)
+    );
 
     return res.status(200).json({
       message: "A new verification code has been sent to your email.",
@@ -298,10 +307,12 @@ router.post("/login", async (req, res) => {
 
     // Block unverified users
     if (!user.isEmailVerified) {
-      // Re-send OTP automatically
+      // Re-send OTP in background (fire-and-forget)
       const otp = user.generateOtp();
       await user.save();
-      await sendOtpEmail(user.email, otp);
+      sendOtpEmail(user.email, otp).catch((err) =>
+        console.error("[Login] OTP resend failed (non-blocking):", err.message)
+      );
 
       return res.status(403).json({
         message: "Please verify your email first. A new code has been sent.",
