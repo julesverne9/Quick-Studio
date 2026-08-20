@@ -33,7 +33,7 @@ import Controls from "./components/Controls";
 import EditorHome from "./components/EditorHome";
 
 const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL || "https://quickstudio-backend.onrender.com";
+  process.env.EXPO_PUBLIC_API_URL || "https://quick-studio.onrender.com";
 
 export default function VideoEditorScreen() {
   const navigation = useNavigation<any>();

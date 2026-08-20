@@ -54,7 +54,7 @@ export default function HomeScreen({ navigation }) {
 
   const handleHeaderAccountPress = () => {
     if (isAuthenticated) {
-      setShowProfileModal(true);
+      navigation.navigate("Account");
       return;
     }
 
@@ -408,14 +408,6 @@ export default function HomeScreen({ navigation }) {
         </View>
       </Modal>
 
-      <ProfileModal
-        visible={showProfileModal}
-        user={user}
-        loading={isAccountBusy}
-        onClose={() => setShowProfileModal(false)}
-        onLogout={handleLogout}
-        onDeleteAccount={handleDeleteAccount}
-      />
     </View>
   );
 }

@@ -19,7 +19,7 @@ const TOKEN_KEY = "quickstudio_jwt";
 const USER_KEY = "quickstudio_user";
 
 const API_BASE =
-  process.env.EXPO_PUBLIC_API_URL || "https://quickstudio-backend.onrender.com";
+  process.env.EXPO_PUBLIC_API_URL || "https://quick-studio.onrender.com";
 
 const api = axios.create({
   baseURL: `${API_BASE}/api`,
@@ -28,10 +28,9 @@ const api = axios.create({
 });
 
 const CONNECTION_ERROR_MESSAGE =
-  "Unable to reach the server. Please check your internet connection or IP configuration.";
+  "Unable to reach the server. Please check your internet connection.";
 
 const buildAuthError = (error, fallbackMessage) => {
-  // Timeout error
   if (error.code === "ECONNABORTED") {
     return {
       success: false,
@@ -42,7 +41,6 @@ const buildAuthError = (error, fallbackMessage) => {
     };
   }
 
-  // No response at all (network error, DNS failure, etc.)
   if (!error.response) {
     return {
       success: false,
@@ -52,14 +50,13 @@ const buildAuthError = (error, fallbackMessage) => {
     };
   }
 
-  // Non-JSON response (e.g. localtunnel HTML warning page)
   const contentType = error.response.headers?.["content-type"] || "";
   if (!contentType.includes("application/json")) {
     return {
       success: false,
       title: "Connection Error",
       message:
-        "Received an unexpected response from the server. If using a tunnel, visit the tunnel URL in a browser first to accept any warning pages.",
+        "Received an unexpected response from the server. If using a tunnel, visit the tunnel URL in a browser first.",
       isNetworkError: true,
     };
   }
@@ -69,12 +66,16 @@ const buildAuthError = (error, fallbackMessage) => {
     title: "Authentication Failed",
     status: error.response.status,
     message: error.response.data?.message || fallbackMessage,
+    // Pass through backend flags
+    requiresVerification: error.response.data?.requiresVerification || false,
+    email: error.response.data?.email || null,
   };
 };
 
+/* ── Secure storage helpers ──────────────────────────────────────── */
+
 const saveSession = async ({ token, user }) => {
   if (!SecureStore) return;
-
   await SecureStore.setItemAsync(TOKEN_KEY, token);
   await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user));
 };
@@ -95,12 +96,13 @@ const getStoredSession = async () => {
 
 const deleteSession = async () => {
   if (!SecureStore) return;
-
   await Promise.all([
     SecureStore.deleteItemAsync(TOKEN_KEY),
     SecureStore.deleteItemAsync(USER_KEY),
   ]);
 };
+
+/* ── Context & Provider ──────────────────────────────────────────── */
 
 const AuthContext = createContext(null);
 
@@ -109,6 +111,7 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Attach JWT to every API request
   useEffect(() => {
     const interceptor = api.interceptors.request.use((config) => {
       if (token) {
@@ -116,10 +119,10 @@ export function AuthProvider({ children }) {
       }
       return config;
     });
-
     return () => api.interceptors.request.eject(interceptor);
   }, [token]);
 
+  // Hydrate session from SecureStore on boot
   useEffect(() => {
     (async () => {
       try {
@@ -130,10 +133,9 @@ export function AuthProvider({ children }) {
         }
 
         setToken(stored.token);
-        if (stored.user) {
-          setUser(stored.user);
-        }
+        if (stored.user) setUser(stored.user);
 
+        // Validate token with server
         const { data } = await api.get("/auth/me", {
           headers: { Authorization: `Bearer ${stored.token}` },
         });
@@ -156,24 +158,56 @@ export function AuthProvider({ children }) {
     setUser(data.user);
   }, []);
 
-  const register = useCallback(
-    async (name, email, password) => {
+  /* ── Register (returns requiresVerification flag) ──────────────── */
+  const register = useCallback(async (name, email, password) => {
+    try {
+      const { data } = await api.post("/auth/register", {
+        name,
+        email,
+        password,
+      });
+
+      // Backend returns requiresVerification: true (no token yet)
+      return {
+        success: true,
+        requiresVerification: true,
+        email: data.email,
+        message: data.message,
+      };
+    } catch (error) {
+      return buildAuthError(error, "Registration failed. Please try again.");
+    }
+  }, []);
+
+  /* ── Verify OTP (completes registration, issues token) ─────────── */
+  const verifyOtp = useCallback(
+    async (email, otp) => {
       try {
-        const { data } = await api.post("/auth/register", {
-          name,
-          email,
-          password,
-        });
+        const { data } = await api.post("/auth/verify-otp", { email, otp });
 
         await applyAuthPayload(data);
         return { success: true, user: data.user, token: data.token };
       } catch (error) {
-        return buildAuthError(error, "Registration failed. Please try again.");
+        return buildAuthError(
+          error,
+          "OTP verification failed. Please try again."
+        );
       }
     },
     [applyAuthPayload]
   );
 
+  /* ── Resend OTP ────────────────────────────────────────────────── */
+  const resendOtp = useCallback(async (email) => {
+    try {
+      const { data } = await api.post("/auth/resend-otp", { email });
+      return { success: true, message: data.message };
+    } catch (error) {
+      return buildAuthError(error, "Unable to resend code. Please try again.");
+    }
+  }, []);
+
+  /* ── Login ─────────────────────────────────────────────────────── */
   const login = useCallback(
     async (email, password) => {
       try {
@@ -188,12 +222,14 @@ export function AuthProvider({ children }) {
     [applyAuthPayload]
   );
 
+  /* ── Logout ────────────────────────────────────────────────────── */
   const logout = useCallback(async () => {
     await deleteSession();
     setToken(null);
     setUser(null);
   }, []);
 
+  /* ── Delete Account ────────────────────────────────────────────── */
   const deleteAccount = useCallback(async () => {
     try {
       await api.delete("/auth/me");
@@ -209,6 +245,7 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  /* ── Pro check ─────────────────────────────────────────────────── */
   const checkProAccess = useCallback(
     (featureName) => {
       if (!user) return { allowed: false, reason: "not_authenticated" };
@@ -229,6 +266,8 @@ export function AuthProvider({ children }) {
       isLoading,
       isAuthenticated: Boolean(user && token),
       register,
+      verifyOtp,
+      resendOtp,
       login,
       logout,
       deleteAccount,
@@ -240,6 +279,8 @@ export function AuthProvider({ children }) {
       token,
       isLoading,
       register,
+      verifyOtp,
+      resendOtp,
       login,
       logout,
       deleteAccount,
