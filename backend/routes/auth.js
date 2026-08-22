@@ -1,13 +1,12 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
 
 const User = require("../models/User");
 const { protectRoute } = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
-const JWT_SECRET = process.env.JWT_SECRET || "development_jwt_secret";
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = "7d";
 
 /* ── Validation helpers ──────────────────────────────────────────── */
@@ -70,32 +69,36 @@ const buildAuthResponse = (user, token) => ({
   },
 });
 
-/* ── Nodemailer transport ────────────────────────────────────────── */
-// Uses environment variables for SMTP configuration.
-// For development/testing, services like Mailtrap or Gmail App Passwords work.
+/* ── Transactional email (Resend HTTPS API) ──────────────────────── */
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || "smtp.gmail.com",
-  port: parseInt(process.env.SMTP_PORT || "587", 10),
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER || "",
-    pass: process.env.SMTP_PASS || "",
-  },
-});
+const RESEND_EMAILS_URL = "https://api.resend.com/emails";
+const OTP_EMAIL_TIMEOUT_MS = 5000;
 
 const sendOtpEmail = async (toEmail, otp) => {
-  // If SMTP is not configured, log the OTP to console for development
-  if (!process.env.SMTP_USER) {
-    console.log(`[DEV OTP] Email: ${toEmail}, OTP: ${otp}`);
-    return;
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.RESEND_FROM_EMAIL;
+
+  if (!apiKey || !from) {
+    throw new Error(
+      "OTP email is not configured: set RESEND_API_KEY and RESEND_FROM_EMAIL."
+    );
   }
 
-  await transporter.sendMail({
-    from: `"QuickStudio" <${process.env.SMTP_USER}>`,
-    to: toEmail,
-    subject: "Your QuickStudio Verification Code",
-    html: `
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OTP_EMAIL_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(RESEND_EMAILS_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: [toEmail],
+        subject: "Your QuickStudio Verification Code",
+        html: `
       <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #0f172a; border-radius: 16px; color: #f8fafc;">
         <h2 style="margin: 0 0 8px; color: #60a5fa;">QuickStudio</h2>
         <p style="margin: 0 0 24px; color: #94a3b8;">Your email verification code:</p>
@@ -105,7 +108,17 @@ const sendOtpEmail = async (toEmail, otp) => {
         <p style="margin: 24px 0 0; color: #64748b; font-size: 13px;">This code expires in 10 minutes. If you didn't request this, ignore this email.</p>
       </div>
     `,
-  });
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Resend returned ${response.status}: ${body}`);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
 };
 
 /* ── POST /api/auth/register ─────────────────────────────────────── */
@@ -133,22 +146,22 @@ const registerHandler = async (req, res) => {
       });
     }
 
-    // Create user (unverified)
-    const user = await User.create({
+    // Generate the OTP before the initial save so registration has one
+    // database write and cannot create an account before the response path.
+    const user = new User({
       name: name.trim(),
       email: cleanEmail,
       password,
       isEmailVerified: false,
     });
 
-    // Generate OTP and save to DB
     const otp = user.generateOtp();
     await user.save();
 
     // Fire-and-forget: send email in background so the HTTP response is instant.
     // If SMTP is slow or fails, the user can still use "Resend Code" on the OTP screen.
     sendOtpEmail(cleanEmail, otp).catch((err) =>
-      console.error("[Register] OTP email failed (non-blocking):", err.message)
+      console.error("[Register] OTP email delivery failed:", err.message)
     );
 
     return res.status(201).json({
@@ -257,10 +270,14 @@ router.post("/resend-otp", async (req, res) => {
     const otp = user.generateOtp();
     await user.save();
 
-    // Fire-and-forget
-    sendOtpEmail(user.email, otp).catch((err) =>
-      console.error("[Resend] OTP email failed (non-blocking):", err.message)
-    );
+    try {
+      await sendOtpEmail(user.email, otp);
+    } catch (error) {
+      console.error("[Resend] OTP email delivery failed:", error.message);
+      return res.status(502).json({
+        message: "Unable to send a verification email right now. Please try again later.",
+      });
+    }
 
     return res.status(200).json({
       message: "A new verification code has been sent to your email.",
@@ -311,7 +328,7 @@ router.post("/login", async (req, res) => {
       const otp = user.generateOtp();
       await user.save();
       sendOtpEmail(user.email, otp).catch((err) =>
-        console.error("[Login] OTP resend failed (non-blocking):", err.message)
+        console.error("[Login] OTP email delivery failed:", err.message)
       );
 
       return res.status(403).json({

@@ -20,10 +20,7 @@ const protectRoute = async (req, res, next) => {
 
     const token = authHeader.split(" ")[1];
 
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "development_jwt_secret"
-    );
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Fetch the live user document so tier changes are always current
     const user = await User.findById(decoded.sub).select("-password");

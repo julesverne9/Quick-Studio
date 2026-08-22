@@ -12,10 +12,7 @@ module.exports = function validateJwt(req, res, next) {
   const token = authHeader.split(" ")[1];
 
   try {
-    const decodedToken = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "development_jwt_secret"
-    );
+    const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decodedToken;
     return next();
   } catch (error) {

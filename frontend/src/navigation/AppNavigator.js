@@ -49,9 +49,6 @@ function MainStack() {
       <Stack.Screen name="Account" component={AccountScreen} />
       <Stack.Screen name="Editor" component={Workspace} />
       <Stack.Screen name="VideoEditor" component={VideoEditorScreen} />
-      {/* Auth screen still accessible for re-authentication flows */}
-      <Stack.Screen name="Auth" component={AuthScreen} />
-      <Stack.Screen name="OTPVerification" component={OTPVerificationScreen} />
     </Stack.Navigator>
   );
 }
@@ -78,5 +75,11 @@ export default function AppNavigator() {
 
   // If a valid token exists, skip Landing/Auth entirely → MainStack
   // Otherwise show the Landing → Auth flow → AuthStack
-  return isAuthenticated ? <MainStack /> : <AuthStack />;
+  // A keyed navigator remounts on auth transitions, which clears the prior
+  // stack history instead of leaving Landing/Auth below the main workspace.
+  return isAuthenticated ? (
+    <MainStack key="authenticated" />
+  ) : (
+    <AuthStack key="unauthenticated" />
+  );
 }

@@ -26,7 +26,10 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
 
 const PRESET_FILTERS = {
   original: [],
@@ -49,7 +52,15 @@ const parseNumber = (value, fallback) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const buildBaseUrl = (req) => `${req.protocol}://${req.get("host")}`;
+const buildBaseUrl = (req) => {
+  const configuredUrl = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "");
+  if (configuredUrl) return configuredUrl;
+
+  // Render terminates TLS before forwarding to Express, so req.protocol can
+  // be "http" even though the phone must use the public HTTPS endpoint.
+  const forwardedProtocol = req.get("x-forwarded-proto")?.split(",")[0];
+  return `${forwardedProtocol || req.protocol}://${req.get("host")}`;
+};
 
 const buildFilterChain = ({
   preset,

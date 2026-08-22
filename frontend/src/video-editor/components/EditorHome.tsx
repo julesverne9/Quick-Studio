@@ -66,7 +66,8 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
         initialAsset: {
           uri: firstAsset.uri,
           name: firstAsset.fileName || "Imported Clip",
-          durationMs: firstAsset.duration ? firstAsset.duration * 1000 : 5000, // fallback to 5s for static images
+          // Expo ImagePicker already reports video duration in milliseconds.
+          durationMs: firstAsset.duration ?? 5000,
         },
       })
     );

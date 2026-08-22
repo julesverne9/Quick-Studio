@@ -5,6 +5,7 @@ const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
 const Project = require('../models/Project');
+const validateJwt = require('../middleware/validateJwt');
 
 // Inject the automatically downloaded static binary path straight into fluent-ffmpeg
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
@@ -20,6 +21,8 @@ const storage = multer.diskStorage({
         cb(null, 'video-' + uniqueSuffix + path.extname(file.originalname));
     }
 });
+
+const MAX_VIDEO_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 // Map frontend filter preset IDs directly to high-fidelity FFmpeg filtergraph strings
 const GET_VIDEO_FILTER_STRING = (filterId, brightness = 1, contrast = 1, saturation = 1) => {
@@ -79,6 +82,7 @@ const GET_VIDEO_FILTER_STRING = (filterId, brightness = 1, contrast = 1, saturat
 // Enforce strict file filters to reject non-video uploads immediately
 const upload = multer({
     storage: storage,
+    limits: { fileSize: MAX_VIDEO_UPLOAD_BYTES },
     fileFilter: (req, file, cb) => {
         if (file.mimetype && file.mimetype.startsWith('video/')) {
             cb(null, true);
@@ -88,10 +92,13 @@ const upload = multer({
     }
 });
 
+// All video endpoints require an authenticated user before accepting work.
+router.use(validateJwt);
+
 /**
  * @route   POST /api/video/process
  * @desc    Accepts a video upload and runs visual transformations via FFmpeg
- * @access  Public
+ * @access  Private
  */
 router.post('/process', upload.single('videoFile'), async (req, res) => {
     console.log("Raw Request Headers:", req.headers);
@@ -175,23 +182,10 @@ router.post('/process', upload.single('videoFile'), async (req, res) => {
     }
 });
 
-// Diagnostic route for testing multipart uploads
-router.post('/debug-upload', upload.any(), (req, res) => {
-    console.log("=== MULTIPART DIAGNOSTIC ===");
-    console.log("Calculated Headers:", req.headers);
-    console.log("Body Fields:", req.body);
-    console.log("Files Array:", req.files);
-
-    return res.json({
-        bodyReceived: req.body,
-        filesReceived: req.files ? req.files.map(f => ({ fieldname: f.fieldname, originalname: f.originalname })) : []
-    });
-});
-
 /**
  * @route   POST /api/video/render
  * @desc    Queue a timeline-based video compilation job
- * @access  Public (auth handled at app level)
+ * @access  Private
  */
 router.post('/render', async (req, res) => {
     try {

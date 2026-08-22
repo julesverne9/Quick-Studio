@@ -9,12 +9,39 @@ const fs = require("fs");
 
 dotenv.config();
 
+const requireEnvironmentVariable = (name) => {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`[Startup] Missing required environment variable: ${name}`);
+  }
+  return value;
+};
+
+// Never start with implicit development credentials or database targets.
+const mongoURI = requireEnvironmentVariable("MONGODB_URI");
+requireEnvironmentVariable("JWT_SECRET");
+
+// Native clients do not send an Origin header. Browser origins, when enabled,
+// must be explicitly configured as a comma-separated CORS_ORIGIN allow-list.
+const allowedOrigins = (process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const isAllowedOrigin = (origin) => !origin || allowedOrigins.includes(origin);
+const corsOptions = {
+  origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
+    origin: allowedOrigins,
+    methods: corsOptions.methods,
+    allowedHeaders: corsOptions.allowedHeaders,
   },
 });
 const port = process.env.PORT || 5000;
@@ -23,7 +50,7 @@ app.set("socketio", io);
 
 /* ── Middleware ──────────────────────────────────────────────────────── */
 
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Ensure uploads directory exists (Render containers start fresh)
@@ -67,6 +94,12 @@ io.on("connection", (socket) => {
 
 app.use((err, _req, res, _next) => {
   console.error("[Global Error Handler]", err.stack || err.message || err);
+  if (err.code === "LIMIT_FILE_SIZE") {
+    return res.status(413).json({
+      success: false,
+      message: "Uploaded file exceeds the allowed size limit.",
+    });
+  }
   res.status(err.status || 500).json({
     success: false,
     message: err.message || "An unexpected server error occurred.",
@@ -74,11 +107,6 @@ app.use((err, _req, res, _next) => {
 });
 
 /* ── Database & startup ─────────────────────────────────────────────── */
-
-const mongoURI =
-  process.env.MONGODB_URI ||
-  process.env.MONGO_URI ||
-  "mongodb+srv://9f34sivaraman_db_user:J81wkxmTjnWslvVe@quick-studio.pjnvpgz.mongodb.net/quickstudio?retryWrites=true&w=majority";
 
 const connectDatabase = async () => {
   try {
