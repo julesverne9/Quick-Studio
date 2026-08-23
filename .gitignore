@@ -37,3 +37,5 @@ android/
 ios/
 coverage/
 *.tsbuildinfo
+
+.artifacts/

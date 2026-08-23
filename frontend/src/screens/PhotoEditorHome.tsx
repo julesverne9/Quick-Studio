@@ -12,26 +12,37 @@ import { Ionicons } from "@expo/vector-icons";
 import { useDispatch, useSelector } from "react-redux";
 import * as ImagePicker from "expo-image-picker";
 
-import { colors, spacing } from "../../theme/tokens";
+import { colors, spacing } from "../theme/tokens";
 import {
   bannerStyles,
   iconRowStyles,
   layout,
   templateStyles,
-} from "../../styles/styles";
-import { createProject, deleteProject } from "../../store/videoEditorSlice";
-import { Track, VideoProject } from "../types";
+} from "../styles/styles";
+import { deleteProject } from "../store/photoEditorSlice";
 
-interface EditorHomeProps {
+interface PhotoProject {
+  id: string;
+  name: string;
+  assetUri: string;
+  assetType: 'photo' | 'video';
+  preset: string;
+  adjustments: { brightness: number; contrast: number; saturation: number };
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface PhotoEditorHomeProps {
   onSelectProject: (id: string) => void;
+  onStartNew: (assetUri: string, assetName: string) => void;
   onClose: () => void;
 }
 
-export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps) {
+export default function PhotoEditorHome({ onSelectProject, onStartNew, onClose }: PhotoEditorHomeProps) {
   const dispatch = useDispatch();
   
   // Read projects from Redux
-  const projects = useSelector((state: any) => state.videoEditor.projects);
+  const projects = useSelector((state: any) => state.photoEditor.projects);
   const hasPromptedRef = useRef(false);
 
   // On mount, if there's a recent project, ask if user wants to continue it
@@ -41,7 +52,7 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
 
     // Find the most recently updated project
     const sorted = [...projects].sort(
-      (a: VideoProject, b: VideoProject) =>
+      (a: PhotoProject, b: PhotoProject) =>
         new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
     const recent = sorted[0];
@@ -67,39 +78,28 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
     if (!permission.granted) {
       Alert.alert(
         "Gallery Access Needed",
-        "Please allow access to your videos to import clips into the timeline."
+        "Please allow access to your photos to edit them."
       );
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["videos"],
-      allowsMultipleSelection: true,
+      mediaTypes: ["images"],
+      allowsEditing: false,
       quality: 1,
     });
 
     if (result.canceled || !result.assets?.length) return;
 
-    // We take the first asset as the initial clip
     const firstAsset = result.assets[0];
-    const projectName = `Project ${new Date().toLocaleDateString("en-US", {
+    const projectName = `Photo ${new Date().toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
     })}`;
 
-    dispatch(
-      createProject({
-        name: projectName,
-        initialAsset: {
-          uri: firstAsset.uri,
-          name: firstAsset.fileName || "Imported Clip",
-          // Expo ImagePicker already reports video duration in milliseconds.
-          durationMs: firstAsset.duration ?? 5000,
-        },
-      })
-    );
+    onStartNew(firstAsset.uri, firstAsset.fileName || projectName);
   };
 
   const handleDeleteProject = (id: string, name: string) => {
@@ -117,14 +117,11 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
     );
   };
 
-  const renderDraftItem = ({ item }: { item: VideoProject }) => {
+  const renderDraftItem = ({ item }: { item: PhotoProject }) => {
     const formattedDate = new Date(item.updatedAt).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
     });
-
-    // Helper to calculate total clip count
-    const totalClips = item.tracks.reduce((sum: number, t: Track) => sum + t.items.length, 0);
 
     return (
       <View
@@ -139,7 +136,6 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
           borderColor: colors.border,
         }}
       >
-        {/* Cover thumbnail */}
         <Pressable
           onPress={() => onSelectProject(item.id)}
           style={{
@@ -151,9 +147,9 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
             marginRight: spacing.md,
           }}
         >
-          {item.coverUri ? (
+          {item.assetUri ? (
             <Image
-              source={{ uri: item.coverUri }}
+              source={{ uri: item.assetUri }}
               style={{ width: "100%", height: "100%" }}
               resizeMode="cover"
             />
@@ -165,12 +161,11 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
                 justifyContent: "center",
               }}
             >
-              <Ionicons name="film-outline" size={24} color={colors.textSoft} />
+              <Ionicons name="image-outline" size={24} color={colors.textSoft} />
             </View>
           )}
         </Pressable>
 
-        {/* Project Info */}
         <Pressable
           onPress={() => onSelectProject(item.id)}
           style={{ flex: 1 }}
@@ -187,15 +182,6 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
           </Text>
           <Text
             style={{
-              color: colors.textMuted,
-              fontSize: 12,
-              marginTop: 4,
-            }}
-          >
-            {totalClips} clip{totalClips !== 1 ? "s" : ""} · {Math.round(item.durationMs / 1000)}s
-          </Text>
-          <Text
-            style={{
               color: colors.textSoft,
               fontSize: 11,
               marginTop: 4,
@@ -205,7 +191,6 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
           </Text>
         </Pressable>
 
-        {/* Actions */}
         <Pressable
           onPress={() => handleDeleteProject(item.id, item.name)}
           style={{
@@ -225,7 +210,6 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
 
   return (
     <View style={layout.screenContainer}>
-      {/* Header bar */}
       <View
         style={{
           flexDirection: "row",
@@ -258,14 +242,13 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
             fontWeight: "800",
           }}
         >
-          Video Studio
+          Photo Studio
         </Text>
 
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* New Project Banner */}
         <Pressable onPress={startNewProject}>
           <View style={bannerStyles.container}>
             <View style={bannerStyles.background}>
@@ -275,7 +258,7 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
               <View style={bannerStyles.iconCircle}>
                 <Ionicons name="add" size={26} color="#fff" />
               </View>
-              <Text style={bannerStyles.title}>Create Video Project</Text>
+              <Text style={bannerStyles.title}>Create Photo Project</Text>
               <Text
                 style={{
                   color: "rgba(255, 255, 255, 0.7)",
@@ -284,13 +267,12 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
                   fontWeight: "600",
                 }}
               >
-                Import multiple clips & audios into a multi-layer timeline
+                Apply filters, adjust colors, and crop your photos
               </Text>
             </View>
           </View>
         </Pressable>
 
-        {/* Feature quick row */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -302,33 +284,17 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
             </Pressable>
             <Text style={iconRowStyles.label}>Camera</Text>
           </View>
-
-          <View style={iconRowStyles.item}>
-            <Pressable style={iconRowStyles.iconBox}>
-              <Ionicons name="recording-outline" size={22} color={colors.success} />
-            </Pressable>
-            <Text style={iconRowStyles.label}>Record</Text>
-          </View>
-
-          <View style={iconRowStyles.item}>
-            <Pressable style={iconRowStyles.iconBox}>
-              <Ionicons name="cloud-done-outline" size={22} color={colors.warning} />
-            </Pressable>
-            <Text style={iconRowStyles.label}>Cloud Sync</Text>
-          </View>
-
           <View style={iconRowStyles.item}>
             <View style={iconRowStyles.iconBox}>
-              <Ionicons name="sparkles-outline" size={22} color={colors.danger} />
+              <Ionicons name="color-wand-outline" size={22} color={colors.danger} />
               <View style={iconRowStyles.badge}>
                 <Text style={iconRowStyles.badgeText}>Pro</Text>
               </View>
             </View>
-            <Text style={iconRowStyles.label}>AI Templates</Text>
+            <Text style={iconRowStyles.label}>AI Enhance</Text>
           </View>
         </ScrollView>
 
-        {/* Recent Drafts section */}
         <View style={{ paddingHorizontal: spacing.md, marginTop: spacing.md }}>
           <Text
             style={{
@@ -354,7 +320,7 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
                 borderStyle: "dashed",
               }}
             >
-              <Ionicons name="folder-open-outline" size={32} color={colors.textSoft} />
+              <Ionicons name="image-outline" size={32} color={colors.textSoft} />
               <Text
                 style={{
                   color: colors.textMuted,
@@ -374,58 +340,17 @@ export default function EditorHome({ onSelectProject, onClose }: EditorHomeProps
                   maxWidth: 200,
                 }}
               >
-                Start a new project by picking videos from your gallery.
+                Start a new project by picking a photo from your gallery.
               </Text>
             </View>
           ) : (
             <FlatList
               data={projects}
               renderItem={renderDraftItem}
-              keyExtractor={(item: VideoProject) => item.id}
+              keyExtractor={(item: PhotoProject) => item.id}
               scrollEnabled={false}
             />
           )}
-        </View>
-
-        {/* Video templates suggestion section */}
-        <View style={[templateStyles.section, { marginBottom: 40 }]}>
-          <View style={templateStyles.header}>
-            <Text style={templateStyles.title}>Weekly Top Templates</Text>
-            <Text style={templateStyles.viewMore}>See all</Text>
-          </View>
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={templateStyles.scrollContent}>
-            {[
-              { id: "t1", title: "Cinematic Intro", duration: "12s" },
-              { id: "t2", title: "TikTok Beat Sync", duration: "15s" },
-              { id: "t3", title: "Vlog Transition", duration: "8s" },
-              { id: "t4", title: "Travel Montage", duration: "24s" },
-            ].map((item, idx) => (
-              <View key={item.id} style={templateStyles.card}>
-                <View style={templateStyles.cardThumb}>
-                  <Ionicons name="play" size={20} color="#fff" />
-                  <View
-                    style={{
-                      position: "absolute",
-                      bottom: spacing.xs,
-                      right: spacing.xs,
-                      backgroundColor: "rgba(0,0,0,0.6)",
-                      paddingHorizontal: 6,
-                      paddingVertical: 2,
-                      borderRadius: 4,
-                    }}
-                  >
-                    <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>
-                      {item.duration}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={templateStyles.cardLabel} numberOfLines={1}>
-                  {item.title}
-                </Text>
-              </View>
-            ))}
-          </ScrollView>
         </View>
       </ScrollView>
     </View>

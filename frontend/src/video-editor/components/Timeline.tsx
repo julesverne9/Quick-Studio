@@ -158,86 +158,93 @@ export default function Timeline() {
       {/* Main Track Editor */}
       <View style={styles.scrollWrapper}>
         <ScrollView
-          ref={scrollViewRef}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          scrollEventThrottle={16}
-          onScroll={handleScroll}
-          onMomentumScrollEnd={handleScrollEnd}
-          onScrollEndDrag={handleScrollEnd}
-          contentContainerStyle={{
-            paddingLeft: TIMELINE_CENTER_OFFSET,
-            paddingRight: TIMELINE_CENTER_OFFSET,
-          }}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator={true}
+          contentContainerStyle={styles.verticalScrollContent}
         >
-          <View style={styles.tracksContainer}>
-            {/* Timeline Ruler */}
-            {renderRuler()}
+          <ScrollView
+            ref={scrollViewRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            scrollEventThrottle={16}
+            onScroll={handleScroll}
+            onMomentumScrollEnd={handleScrollEnd}
+            onScrollEndDrag={handleScrollEnd}
+            nestedScrollEnabled
+            contentContainerStyle={{
+              paddingLeft: TIMELINE_CENTER_OFFSET,
+              paddingRight: TIMELINE_CENTER_OFFSET,
+            }}
+          >
+            <View style={styles.tracksContainer}>
+              {/* Timeline Ruler */}
+              {renderRuler()}
 
-            {/* Tracks */}
-            {currentProject.tracks.map((track: Track) => (
-              <View key={track.id} style={styles.trackRow}>
-                {/* Track icon and name tag */}
-                <View style={styles.trackHeader}>
-                  <Text style={styles.trackHeaderText} numberOfLines={1}>
-                    {track.name}
-                  </Text>
+              {/* Tracks */}
+              {currentProject.tracks.map((track: Track) => (
+                <View key={track.id} style={styles.trackRow}>
+                  {/* Track icon and name tag */}
+                  <View style={styles.trackHeader}>
+                    <Text style={styles.trackHeaderText} numberOfLines={1}>
+                      {track.name}
+                    </Text>
+                  </View>
+
+                  {/* Track content area */}
+                  <View style={styles.trackContent}>
+                    {track.items.map((item: TrackItem) => {
+                      const isSelected = activeItemId === item.id;
+                      const left = timeToPx(item.startOffsetMs);
+                      const width = timeToPx(item.durationMs);
+
+                      return (
+                        <Pressable
+                          key={item.id}
+                          onPress={() => selectClip(track.id, item.id)}
+                          style={[
+                            styles.clipBlock,
+                            {
+                              left,
+                              width,
+                              backgroundColor: getItemColor(item.type, isSelected),
+                              borderColor: isSelected ? colors.text : colors.border,
+                              borderWidth: isSelected ? 2 : 1,
+                            },
+                          ]}
+                        >
+                          <Text style={styles.clipLabel} numberOfLines={1}>
+                            {item.name}
+                          </Text>
+
+                          {/* Render keyframe indicators on block */}
+                          {item.keyframes.map((k, index) => (
+                            <View
+                              key={`k-${index}`}
+                              style={{
+                                position: "absolute",
+                                left: timeToPx(k.timeOffsetMs),
+                                top: "50%",
+                                marginTop: -4,
+                                width: 8,
+                                height: 8,
+                                backgroundColor: colors.accent,
+                                transform: [{ rotate: "45deg" }],
+                                zIndex: 10,
+                              }}
+                            />
+                          ))}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
                 </View>
-
-                {/* Track content area */}
-                <View style={styles.trackContent}>
-                  {track.items.map((item: TrackItem) => {
-                    const isSelected = activeItemId === item.id;
-                    const left = timeToPx(item.startOffsetMs);
-                    const width = timeToPx(item.durationMs);
-
-                    return (
-                      <Pressable
-                        key={item.id}
-                        onPress={() => selectClip(track.id, item.id)}
-                        style={[
-                          styles.clipBlock,
-                          {
-                            left,
-                            width,
-                            backgroundColor: getItemColor(item.type, isSelected),
-                            borderColor: isSelected ? colors.text : colors.border,
-                            borderWidth: isSelected ? 2 : 1,
-                          },
-                        ]}
-                      >
-                        <Text style={styles.clipLabel} numberOfLines={1}>
-                          {item.name}
-                        </Text>
-
-                        {/* Render keyframe indicators on block */}
-                        {item.keyframes.map((k, index) => (
-                          <View
-                            key={`k-${index}`}
-                            style={{
-                              position: "absolute",
-                              left: timeToPx(k.timeOffsetMs),
-                              top: "50%",
-                              marginTop: -4,
-                              width: 8,
-                              height: 8,
-                              backgroundColor: colors.accent,
-                              transform: [{ rotate: "45deg" }],
-                              zIndex: 10,
-                            }}
-                          />
-                        ))}
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-            ))}
-          </View>
+              ))}
+            </View>
+          </ScrollView>
         </ScrollView>
 
         {/* Fixed vertical Playhead cursor red line */}
-        <View style={styles.playheadLine}>
+        <View style={styles.playheadLine} pointerEvents="none">
           <View style={styles.playheadHandle} />
         </View>
       </View>
@@ -274,6 +281,9 @@ const styles = StyleSheet.create({
   scrollWrapper: {
     flex: 1,
     position: "relative",
+  },
+  verticalScrollContent: {
+    flexGrow: 1,
   },
   tracksContainer: {
     paddingTop: 36, // leave room for ruler

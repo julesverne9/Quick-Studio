@@ -24,6 +24,7 @@ import {
   updateExportSettings,
   saveCurrentProjectToSavedDrafts,
   selectProject,
+  closeProject,
 } from "../store/videoEditorSlice";
 import { saveProjectsToDisk } from "./utils/projectPersistence";
 
@@ -34,6 +35,12 @@ import EditorHome from "./components/EditorHome";
 
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_URL || "https://quick-studio.onrender.com";
+
+const { height: SCREEN_HEIGHT } = Dimensions.get("window");
+// Reserve space for header (~50), playback controls (~48), tools dock (76),
+// and leave enough room for the timeline. Preview gets the remainder,
+// clamped to a reasonable range.
+const PREVIEW_HEIGHT = Math.min(400, Math.max(180, Math.round(SCREEN_HEIGHT * 0.35)));
 
 export default function VideoEditorScreen() {
   const navigation = useNavigation<any>();
@@ -180,7 +187,10 @@ export default function VideoEditorScreen() {
       {/* Top Header Controls bar */}
       <View style={styles.header}>
         <Pressable
-          onPress={() => dispatch(selectProject(""))} // Deselect to return to Video Home
+          onPress={() => {
+            dispatch(saveCurrentProjectToSavedDrafts());
+            dispatch(closeProject());
+          }}
           style={styles.headerBtn}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
@@ -407,8 +417,9 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   previewContainer: {
-    height: 240,
+    height: PREVIEW_HEIGHT,
     width: "100%",
+    backgroundColor: "#000",
   },
   playbackControls: {
     flexDirection: "row",

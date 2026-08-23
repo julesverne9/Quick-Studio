@@ -1,12 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  DimensionValue,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import { Video, AVPlaybackStatus } from "expo-av";
+import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
 import { useDispatch, useSelector } from "react-redux";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -89,7 +88,6 @@ const evaluateKeyframes = (
 export default function PreviewPlayer() {
   const dispatch = useDispatch();
   const videoRef = useRef<Video>(null);
-  const playbackTimerRef = useRef<any>(null);
 
   const currentProject = useSelector((state: any) => state.videoEditor.currentProject);
   const currentTimeMs = useSelector((state: any) => state.videoEditor.currentTimeMs);
@@ -97,6 +95,12 @@ export default function PreviewPlayer() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [activeVideoItem, setActiveVideoItem] = useState<TrackItem | null>(null);
+
+  // Keep refs in sync so the playback status callback always reads fresh values
+  const isPlayingRef = useRef(isPlaying);
+  const activeVideoItemRef = useRef(activeVideoItem);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { activeVideoItemRef.current = activeVideoItem; }, [activeVideoItem]);
 
   // Determine active video clip and other overlays at the current playhead
   useEffect(() => {
@@ -133,40 +137,28 @@ export default function PreviewPlayer() {
     }
   }, [currentTimeMs, activeVideoItem, isPlaying]);
 
-  // Handle Play/Pause playback loops
+  // Handle Play/Pause — just toggle native playback, time updates come from onPlaybackStatusUpdate
   useEffect(() => {
     if (isPlaying) {
-      // Start polling timer
-      playbackTimerRef.current = setInterval(() => {
-        dispatch(setCurrentTime(currentTimeMs + 33)); // ~30 fps
-      }, 33);
-      
       if (videoRef.current && activeVideoItem) {
         videoRef.current.setStatusAsync({ shouldPlay: true });
       }
     } else {
-      if (playbackTimerRef.current) {
-        clearInterval(playbackTimerRef.current);
-      }
       if (videoRef.current) {
         videoRef.current.setStatusAsync({ shouldPlay: false });
       }
     }
-
-    return () => {
-      if (playbackTimerRef.current) {
-        clearInterval(playbackTimerRef.current);
-      }
-    };
-  }, [isPlaying, currentTimeMs, activeVideoItem]);
+  }, [isPlaying, activeVideoItem]);
 
   const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
     if (!status.isLoaded) return;
 
-    if (status.isPlaying && isPlaying) {
-      // Keep state sync
-      const currentClipTime = status.positionMillis - (activeVideoItem?.startCutMs || 0);
-      const projectTime = (activeVideoItem?.startOffsetMs || 0) + currentClipTime / (activeVideoItem?.speed || 1.0);
+    const playing = isPlayingRef.current;
+    const clipItem = activeVideoItemRef.current;
+
+    if (status.isPlaying && playing && clipItem) {
+      const currentClipTime = status.positionMillis - (clipItem.startCutMs || 0);
+      const projectTime = (clipItem.startOffsetMs || 0) + currentClipTime / (clipItem.speed || 1.0);
       dispatch(setCurrentTime(Math.round(projectTime)));
     }
 
@@ -203,8 +195,9 @@ export default function PreviewPlayer() {
                 opacity: activeVideoItem.opacity,
               },
             ]}
-            resizeMode={Video.RESIZE_MODE_CONTAIN}
+            resizeMode={ResizeMode.CONTAIN}
             shouldPlay={isPlaying}
+            progressUpdateIntervalMillis={50}
             isMuted={activeVideoItem.volume === 0}
             volume={activeVideoItem.volume}
             onPlaybackStatusUpdate={handlePlaybackStatusUpdate}

@@ -125,6 +125,16 @@ export const videoEditorSlice = createSlice({
       }
     },
     
+    closeProject(state: VideoEditorState) {
+      state.currentProject = null;
+      state.currentTimeMs = 0;
+      state.isPlaying = false;
+      state.activeItemId = null;
+      state.activeTrackId = null;
+      state.undoStack = [];
+      state.redoStack = [];
+    },
+    
     saveToHistory(state: VideoEditorState) {
       if (state.currentProject) {
         state.undoStack.push(cloneProject(state.currentProject));
@@ -382,6 +392,7 @@ export const {
   createProject,
   deleteProject,
   selectProject,
+  closeProject,
   saveToHistory,
   undo,
   redo,

@@ -29,6 +29,9 @@ import {
 
 import Button from "../components/ui/Button";
 import { useAuth } from "../context/AuthContext";
+import PhotoEditorHome from './PhotoEditorHome';
+import { useSelector, useDispatch } from 'react-redux';
+import { selectProject as selectPhotoProject, createProject as createPhotoProject, closeProject as closePhotoProject, saveCurrentProjectToDrafts as savePhotoProject } from '../store/photoEditorSlice';
 import { colors, spacing, radius } from "../theme/tokens";
 import {
   layout,
@@ -539,6 +542,34 @@ export default function Workspace() {
     [route.params?.tool]
   );
   const [asset, setAsset] = useState(null);
+
+  const dispatch = useDispatch();
+  const currentPhotoProject = useSelector((state) => state.photoEditor.currentProject);
+
+  const isPhotoTool = route.params?.tool && !route.params.tool.includes('video');
+  const showPhotoHome = !asset && !currentPhotoProject && isPhotoTool;
+
+  const handleBackFromEditor = () => {
+    if (isPhotoTool && currentPhotoProject) {
+      dispatch(savePhotoProject());
+      dispatch(closePhotoProject());
+      setAsset(null);
+    } else {
+      navigation.goBack();
+    }
+  };
+
+  const handleSelectProject = (id) => {
+    dispatch(selectPhotoProject(id));
+  };
+
+  const handleStartNew = (assetUri, assetName) => {
+    dispatch(createPhotoProject({ name: assetName, assetUri, assetType: 'photo' }));
+  };
+
+  const handleCloseHome = () => {
+    navigation.goBack();
+  };
   const [activeTab, setActiveTab] = useState("presets");
   const [activePreset, setActivePreset] = useState("original");
   const [adjustments, setAdjustments] = useState(DEFAULT_ADJUSTMENTS);
@@ -573,6 +604,23 @@ export default function Workspace() {
   });
 
   // Track playing state via event listener
+  useEffect(() => {
+    if (currentPhotoProject && !asset) {
+      setAsset({
+        uri: currentPhotoProject.assetUri,
+        fileName: currentPhotoProject.name,
+        mimeType: 'image/jpeg',
+        assetType: currentPhotoProject.assetType || 'photo',
+      });
+      if (currentPhotoProject.preset) {
+        setActivePreset(currentPhotoProject.preset);
+      }
+      if (currentPhotoProject.adjustments) {
+        setAdjustments(currentPhotoProject.adjustments);
+      }
+    }
+  }, [currentPhotoProject, asset]);
+
   useEffect(() => {
     if (!player) return;
 
@@ -963,11 +1011,21 @@ export default function Workspace() {
 
   /* ── Render ──────────────────────────────────────────────────────── */
 
+  if (showPhotoHome) {
+    return (
+      <PhotoEditorHome
+        onSelectProject={handleSelectProject}
+        onStartNew={handleStartNew}
+        onClose={handleCloseHome}
+      />
+    );
+  }
+
   return (
     <View style={layout.screenContainer}>
       {/* ── Top bar ──────────────────────────────────────── */}
       <View style={topBarStyles.container}>
-        <Pressable onPress={() => navigation.goBack()} style={topBarStyles.iconButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <Pressable onPress={handleBackFromEditor} style={topBarStyles.iconButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="arrow-back" size={20} color={colors.text} />
         </Pressable>
 
