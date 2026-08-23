@@ -195,18 +195,39 @@ function AdjustmentSlider({
   onValueChange,
 }) {
   const [trackWidth, setTrackWidth] = useState(0);
+  const [trackPageX, setTrackPageX] = useState(0);
+  const [internalValue, setInternalValue] = useState(value);
+  const [isDragging, setIsDragging] = useState(false);
+  const trackRef = useRef(null);
+  const lastUpdate = useRef(0);
 
-  const updateValueFromPosition = (positionX) => {
+  // Sync with prop when not dragging
+  useEffect(() => {
+    if (!isDragging) {
+      setInternalValue(value);
+    }
+  }, [value, isDragging]);
+
+  const updateValueFromPosition = (pageX, forceCommit = false) => {
     if (!trackWidth) return;
 
-    const ratio = Math.min(Math.max(positionX / trackWidth, 0), 1);
+    // Use pageX - trackPageX for absolute reliability vs locationX which jumps on child taps
+    const relativeX = pageX - trackPageX;
+    const ratio = Math.min(Math.max(relativeX / trackWidth, 0), 1);
     const rawValue = minimumValue + ratio * (maximumValue - minimumValue);
     const steppedValue = Math.round(rawValue / step) * step;
     const nextValue = Number(
       Math.min(Math.max(steppedValue, minimumValue), maximumValue).toFixed(2)
     );
 
-    onValueChange(nextValue);
+    setInternalValue(nextValue);
+
+    // Throttle parent updates to ~60fps to avoid flickering/preview lag
+    const now = Date.now();
+    if (forceCommit || now - lastUpdate.current > 16) {
+      onValueChange(nextValue);
+      lastUpdate.current = now;
+    }
   };
 
   const panResponder = useMemo(
@@ -215,17 +236,35 @@ function AdjustmentSlider({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: (event) => {
-          updateValueFromPosition(event.nativeEvent.locationX);
+          setIsDragging(true);
+          updateValueFromPosition(event.nativeEvent.pageX);
         },
         onPanResponderMove: (event) => {
-          updateValueFromPosition(event.nativeEvent.locationX);
+          updateValueFromPosition(event.nativeEvent.pageX);
+        },
+        onPanResponderRelease: (event) => {
+          updateValueFromPosition(event.nativeEvent.pageX, true);
+          setIsDragging(false);
+        },
+        onPanResponderTerminate: () => {
+          setIsDragging(false);
+          setInternalValue(value);
         },
       }),
-    [trackWidth, minimumValue, maximumValue, step, onValueChange]
+    [trackWidth, trackPageX, minimumValue, maximumValue, step, onValueChange, value]
   );
 
-  const progress =
-    ((value - minimumValue) / (maximumValue - minimumValue)) * 100;
+  const displayProgress =
+    ((internalValue - minimumValue) / (maximumValue - minimumValue)) * 100;
+
+  const handleLayout = () => {
+    if (trackRef.current) {
+      trackRef.current.measure((x, y, width, height, pageX, pageY) => {
+        setTrackWidth(width);
+        setTrackPageX(pageX);
+      });
+    }
+  };
 
   return (
     <View style={editorStyles.sliderRow}>
@@ -238,21 +277,22 @@ function AdjustmentSlider({
       </View>
 
       <View
+        ref={trackRef}
         style={editorStyles.sliderTrackWrap}
-        onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
+        onLayout={handleLayout}
         {...panResponder.panHandlers}
       >
         <View style={editorStyles.sliderTrack} />
         <View
           style={[
             editorStyles.sliderFill,
-            { width: `${Math.min(Math.max(progress, 0), 100)}%` },
+            { width: `${Math.min(Math.max(displayProgress, 0), 100)}%` },
           ]}
         />
         <View
           style={[
             editorStyles.sliderThumb,
-            { left: `${Math.min(Math.max(progress, 0), 100)}%` },
+            { left: `${Math.min(Math.max(displayProgress, 0), 100)}%` },
           ]}
         />
       </View>
