@@ -161,6 +161,11 @@ export default function VideoEditorScreen() {
   };
 
   const handlePlayPause = () => {
+    if (!isPlaying) {
+      if (currentProject && currentTimeMs >= currentProject.durationMs) {
+        dispatch(setCurrentTime(0));
+      }
+    }
     dispatch(setPlaying(!isPlaying));
   };
 
@@ -430,14 +435,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt,
   },
   timecode: {
+    width: 80,
     color: colors.text,
     fontSize: 12,
     fontWeight: "700",
+    textAlign: "left",
   },
   totalDuration: {
+    width: 80,
     color: colors.textMuted,
     fontSize: 12,
     fontWeight: "700",
+    textAlign: "right",
   },
   playPauseBtn: {
     width: 44,

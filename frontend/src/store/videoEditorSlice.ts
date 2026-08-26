@@ -265,9 +265,14 @@ export const videoEditorSlice = createSlice({
       if (track) {
         const item = track.items.find((itm: TrackItem) => itm.id === action.payload.itemId);
         if (item) {
-          // Check if we need history tracking (e.g. not for continuous drag, but done in separate stages. 
-          // We will save to history before updating properties.
-          // Note: In Redux, key changes like Split or filter selection call saveToHistory first, then update.
+          // If speed is changing, we need to adjust the durationMs on the timeline
+          // so that the same range of source video is played at the new speed.
+          if (action.payload.updates.speed !== undefined && action.payload.updates.speed !== item.speed) {
+            const newSpeed = action.payload.updates.speed;
+            const oldSpeed = item.speed;
+            item.durationMs = Math.round((item.durationMs * oldSpeed) / newSpeed);
+          }
+
           Object.assign(item, action.payload.updates);
           
           // Recalculate duration

@@ -96,11 +96,18 @@ export default function PreviewPlayer() {
   const [isLoading, setIsLoading] = useState(false);
   const [activeVideoItem, setActiveVideoItem] = useState<TrackItem | null>(null);
 
-  // Keep refs in sync so the playback status callback always reads fresh values
+  // Keep refs in sync for ticker and callbacks
   const isPlayingRef = useRef(isPlaying);
+  const currentTimeMsRef = useRef(currentTimeMs);
   const activeVideoItemRef = useRef(activeVideoItem);
+  const currentProjectRef = useRef(currentProject);
+  const animFrameRef = useRef<number | null>(null);
+  const lastTickRef = useRef<number>(0);
+
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { currentTimeMsRef.current = currentTimeMs; }, [currentTimeMs]);
   useEffect(() => { activeVideoItemRef.current = activeVideoItem; }, [activeVideoItem]);
+  useEffect(() => { currentProjectRef.current = currentProject; }, [currentProject]);
 
   // Determine active video clip and other overlays at the current playhead
   useEffect(() => {
@@ -115,13 +122,17 @@ export default function PreviewPlayer() {
     );
 
     if (activeVideo) {
-      if (activeVideoItem?.id !== activeVideo.id) {
-        setActiveVideoItem(activeVideo);
+      // If the content (ID or URI) changed, trigger loading state
+      if (activeVideoItem?.id !== activeVideo.id || activeVideoItem?.sourceUri !== activeVideo.sourceUri) {
         setIsLoading(true);
       }
+      // Always update to catch property changes (volume, speed, etc.)
+      setActiveVideoItem(activeVideo);
     } else {
-      setActiveVideoItem(null);
-      setIsLoading(false);
+      if (activeVideoItem) {
+        setActiveVideoItem(null);
+        setIsLoading(false);
+      }
     }
   }, [currentTimeMs, currentProject]);
 
@@ -129,42 +140,84 @@ export default function PreviewPlayer() {
   useEffect(() => {
     if (!isPlaying && videoRef.current && activeVideoItem) {
       const clipTimeMs = currentTimeMs - activeVideoItem.startOffsetMs;
-      const seekTimeMs = activeVideoItem.startCutMs + clipTimeMs * activeVideoItem.speed;
+      const seekTimeMs = activeVideoItem.startCutMs + clipTimeMs * (activeVideoItem.speed || 1.0);
       videoRef.current.setStatusAsync({
-        positionMillis: seekTimeMs,
+        positionMillis: Math.max(0, Math.round(seekTimeMs)),
         shouldPlay: false,
       });
     }
   }, [currentTimeMs, activeVideoItem, isPlaying]);
 
-  // Handle Play/Pause — just toggle native playback, time updates come from onPlaybackStatusUpdate
+  // Seamlessly transition video playback when entering a new clip while playing
+  useEffect(() => {
+    if (isPlaying && videoRef.current && activeVideoItem) {
+      const clipTimeMs = currentTimeMsRef.current - activeVideoItem.startOffsetMs;
+      const seekTimeMs = activeVideoItem.startCutMs + clipTimeMs * (activeVideoItem.speed || 1.0);
+      videoRef.current.setStatusAsync({
+        positionMillis: Math.max(0, Math.round(seekTimeMs)),
+        shouldPlay: true,
+        rate: activeVideoItem.speed || 1.0,
+        shouldCorrectPitch: true,
+      });
+    }
+  }, [activeVideoItem, isPlaying]);
+
+  // Master Playback Loop (runs smoothly at 60fps whenever isPlaying is true)
   useEffect(() => {
     if (isPlaying) {
-      if (videoRef.current && activeVideoItem) {
-        videoRef.current.setStatusAsync({ shouldPlay: true });
-      }
+      lastTickRef.current = Date.now();
+
+      const tick = () => {
+        if (!isPlayingRef.current) return;
+
+        const now = Date.now();
+        const delta = now - lastTickRef.current;
+        lastTickRef.current = now;
+
+        const project = currentProjectRef.current;
+        const maxDuration = project ? project.durationMs : 0;
+        const nextTime = currentTimeMsRef.current + delta;
+
+        if (maxDuration > 0 && nextTime >= maxDuration) {
+          dispatch(setCurrentTime(maxDuration));
+          dispatch(setPlaying(false));
+          if (videoRef.current) {
+            videoRef.current.setStatusAsync({ shouldPlay: false });
+          }
+          return;
+        }
+
+        dispatch(setCurrentTime(Math.round(nextTime)));
+        animFrameRef.current = requestAnimationFrame(tick);
+      };
+
+      animFrameRef.current = requestAnimationFrame(tick);
     } else {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
       if (videoRef.current) {
         videoRef.current.setStatusAsync({ shouldPlay: false });
       }
     }
-  }, [isPlaying, activeVideoItem]);
+
+    return () => {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+    };
+  }, [isPlaying]);
 
   const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
     if (!status.isLoaded) return;
 
-    const playing = isPlayingRef.current;
-    const clipItem = activeVideoItemRef.current;
-
-    if (status.isPlaying && playing && clipItem) {
-      const currentClipTime = status.positionMillis - (clipItem.startCutMs || 0);
-      const projectTime = (clipItem.startOffsetMs || 0) + currentClipTime / (clipItem.speed || 1.0);
-      dispatch(setCurrentTime(Math.round(projectTime)));
-    }
-
-    if (status.didJustFinish) {
-      // If we finished the current clip, check if there's a next one, otherwise stop playback
-      dispatch(setPlaying(false));
+    if (status.didJustFinish && isPlayingRef.current) {
+      const project = currentProjectRef.current;
+      if (project && currentTimeMsRef.current >= project.durationMs) {
+        dispatch(setPlaying(false));
+      }
     }
   };
 
@@ -200,6 +253,8 @@ export default function PreviewPlayer() {
             progressUpdateIntervalMillis={50}
             isMuted={activeVideoItem.volume === 0}
             volume={activeVideoItem.volume}
+            rate={activeVideoItem.speed || 1.0}
+            shouldCorrectPitch={true}
             onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
             onLoadStart={() => setIsLoading(true)}
             onLoad={() => setIsLoading(false)}

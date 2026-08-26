@@ -25,6 +25,7 @@ import {
   saturate as saturateMatrix,
   grayscale as grayscaleMatrix,
   sepia as sepiaMatrix,
+  invert as invertMatrix,
 } from "react-native-color-matrix-image-filters";
 
 import Button from "../components/ui/Button";
@@ -109,12 +110,7 @@ const PRESETS = [
     id: "negative",
     label: "Negative",
     icon: "invert-mode-outline",
-    getMatrix: () => [
-      -1, 0, 0, 0, 1,
-       0,-1, 0, 0, 1,
-       0, 0,-1, 0, 1,
-       0, 0, 0, 1, 0,
-    ],
+    getMatrix: () => invertMatrix(),
   },
   {
     id: "vignette",

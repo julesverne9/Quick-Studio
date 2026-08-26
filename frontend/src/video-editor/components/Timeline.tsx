@@ -26,7 +26,7 @@ const TIMELINE_CENTER_OFFSET = SCREEN_WIDTH / 2;
 export default function Timeline() {
   const dispatch = useDispatch();
   const scrollViewRef = useRef<ScrollView>(null);
-  const isScrollingRef = useRef(false);
+  const isUserDraggingRef = useRef(false);
 
   const currentProject = useSelector((state: any) => state.videoEditor.currentProject);
   const currentTimeMs = useSelector((state: any) => state.videoEditor.currentTimeMs);
@@ -34,36 +34,31 @@ export default function Timeline() {
   const zoomLevel = useSelector((state: any) => state.videoEditor.zoomLevel); // px per second
   const activeItemId = useSelector((state: any) => state.videoEditor.activeItemId);
 
-  // Sync timeline scroll with playback
+  // Sync timeline scroll with playback and currentTime changes
   useEffect(() => {
-    if (isPlaying && scrollViewRef.current && !isScrollingRef.current) {
+    if (scrollViewRef.current && !isUserDraggingRef.current) {
       const seconds = currentTimeMs / 1000;
       const scrollX = seconds * zoomLevel;
       scrollViewRef.current.scrollTo({ x: scrollX, animated: false });
     }
-  }, [currentTimeMs, isPlaying, zoomLevel]);
-
-  // Adjust scroll when zoom changes to keep playhead centered
-  useEffect(() => {
-    if (scrollViewRef.current) {
-      const scrollX = (currentTimeMs / 1000) * zoomLevel;
-      scrollViewRef.current.scrollTo({ x: scrollX, animated: false });
-    }
-  }, [zoomLevel]);
+  }, [currentTimeMs, zoomLevel]);
 
   if (!currentProject) return null;
 
+  const handleScrollBeginDrag = () => {
+    isUserDraggingRef.current = true;
+  };
+
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (isPlaying) return; // ignore scroll events triggered by playback auto-scroll
+    if (isPlaying || !isUserDraggingRef.current) return; // only sync when user is physically dragging
     
-    isScrollingRef.current = true;
     const scrollX = event.nativeEvent.contentOffset.x;
     const timeMs = (scrollX / zoomLevel) * 1000;
     dispatch(setCurrentTime(Math.round(timeMs)));
   };
 
   const handleScrollEnd = () => {
-    isScrollingRef.current = false;
+    isUserDraggingRef.current = false;
   };
 
   // Convert time to pixels
@@ -90,9 +85,11 @@ export default function Timeline() {
     }
   };
 
+  const totalSeconds = Math.max(30, Math.ceil(currentProject.durationMs / 1000) + 10);
+  const timelineContentWidth = totalSeconds * zoomLevel;
+
   // Render rulers/ticks
   const renderRuler = () => {
-    const totalSeconds = Math.max(30, Math.ceil(currentProject.durationMs / 1000) + 10);
     const ticks = [];
     
     for (let i = 0; i <= totalSeconds; i++) {
@@ -126,7 +123,7 @@ export default function Timeline() {
     }
 
     return (
-      <View style={[styles.rulerContainer, { width: totalSeconds * zoomLevel }]}>
+      <View style={[styles.rulerContainer, { width: timelineContentWidth }]}>
         {ticks}
       </View>
     );
@@ -167,6 +164,7 @@ export default function Timeline() {
             horizontal
             showsHorizontalScrollIndicator={false}
             scrollEventThrottle={16}
+            onScrollBeginDrag={handleScrollBeginDrag}
             onScroll={handleScroll}
             onMomentumScrollEnd={handleScrollEnd}
             onScrollEndDrag={handleScrollEnd}
@@ -176,13 +174,13 @@ export default function Timeline() {
               paddingRight: TIMELINE_CENTER_OFFSET,
             }}
           >
-            <View style={styles.tracksContainer}>
+            <View style={[styles.tracksContainer, { width: timelineContentWidth }]}>
               {/* Timeline Ruler */}
               {renderRuler()}
 
               {/* Tracks */}
               {currentProject.tracks.map((track: Track) => (
-                <View key={track.id} style={styles.trackRow}>
+                <View key={track.id} style={[styles.trackRow, { width: timelineContentWidth }]}>
                   {/* Track icon and name tag */}
                   <View style={styles.trackHeader}>
                     <Text style={styles.trackHeaderText} numberOfLines={1}>
@@ -191,7 +189,7 @@ export default function Timeline() {
                   </View>
 
                   {/* Track content area */}
-                  <View style={styles.trackContent}>
+                  <View style={[styles.trackContent, { width: timelineContentWidth }]}>
                     {track.items.map((item: TrackItem) => {
                       const isSelected = activeItemId === item.id;
                       const left = timeToPx(item.startOffsetMs);
@@ -283,7 +281,7 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   verticalScrollContent: {
-    flexGrow: 1,
+    paddingBottom: 80,
   },
   tracksContainer: {
     paddingTop: 36, // leave room for ruler
@@ -301,23 +299,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginVertical: 4,
     position: "relative",
+    backgroundColor: "rgba(15, 23, 42, 0.4)",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(51, 65, 85, 0.4)",
   },
   trackHeader: {
     position: "absolute",
-    left: -TIMELINE_CENTER_OFFSET + spacing.md,
-    width: TIMELINE_CENTER_OFFSET - spacing.lg,
-    zIndex: 100,
-    backgroundColor: "rgba(15, 23, 42, 0.85)",
+    left: 8,
+    top: 4,
+    zIndex: 10,
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: colors.borderStrong,
   },
   trackHeaderText: {
     color: colors.textMuted,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   trackContent: {
     flex: 1,
