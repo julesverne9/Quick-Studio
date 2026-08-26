@@ -26,6 +26,7 @@ import {
 } from "../../store/videoEditorSlice";
 import { Keyframe, Track, TrackItem } from "../types";
 import GraphEditor from "./GraphEditor";
+import MediaDrawer from "./MediaDrawer";
 
 export default function Controls() {
   const dispatch = useDispatch();
@@ -39,6 +40,8 @@ export default function Controls() {
   const [aiProcessing, setAiProcessing] = useState(false);
   const [textVal, setTextVal] = useState("");
   const [showCurveEditor, setShowCurveEditor] = useState(false);
+  const [showMediaDrawer, setShowMediaDrawer] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<"sounds" | "fx" | "videos" | "voice">("sounds");
 
   if (!currentProject) return null;
 
@@ -83,6 +86,38 @@ export default function Controls() {
     );
   };
 
+  // Extract Audio from selected Video item onto Music Track
+  const handleExtractAudio = () => {
+    if (!activeItem) {
+      Alert.alert("Select Clip", "Select a video clip first to extract its audio.");
+      return;
+    }
+
+    const audioItem: TrackItem = {
+      id: `extracted-${Date.now()}`,
+      type: "audio",
+      name: `Extracted: ${activeItem.name}`,
+      sourceUri: activeItem.sourceUri,
+      startOffsetMs: activeItem.startOffsetMs,
+      durationMs: activeItem.durationMs,
+      startCutMs: activeItem.startCutMs,
+      endCutMs: activeItem.endCutMs,
+      x: 0,
+      y: 0,
+      scale: 1,
+      rotation: 0,
+      opacity: 1,
+      volume: 1.0,
+      speed: activeItem.speed || 1.0,
+      filterPreset: "original",
+      adjustments: { brightness: 1, contrast: 1, saturation: 1 },
+      keyframes: [],
+    };
+
+    dispatch(addTrackItem({ trackId: "track-audio-music", item: audioItem }));
+    Alert.alert("Audio Extracted", `Created independent audio waveform on Music Track.`);
+  };
+
   // AI Captions simulator - inserts real text layers onto subtitles track!
   const runAiCaptions = () => {
     setAiProcessing(true);
@@ -105,7 +140,7 @@ export default function Controls() {
           startCutMs: 0,
           endCutMs: 0,
           x: 0,
-          y: 60, // position low on screen
+          y: 60,
           scale: 1.0,
           rotation: 0,
           opacity: 1.0,
@@ -140,7 +175,7 @@ export default function Controls() {
       type: "text",
       name: `Text: ${textVal.substring(0, 10)}...`,
       startOffsetMs: currentTimeMs,
-      durationMs: 4000, // 4 seconds duration
+      durationMs: 4000,
       startCutMs: 0,
       endCutMs: 0,
       x: 0,
@@ -171,7 +206,6 @@ export default function Controls() {
   const handleAddKeyframe = () => {
     if (!activeItem || !activeTrackId) return;
     
-    // Relative offset of playhead inside clip
     const relativeOffset = currentTimeMs - activeItem.startOffsetMs;
     const kf: Keyframe = {
       timeOffsetMs: relativeOffset,
@@ -194,9 +228,47 @@ export default function Controls() {
 
   // Render contextual panels based on selected tool
   const renderToolPanel = () => {
-    if (!activeItem && activeTool !== "text" && activeTool !== "ai") return null;
-
     switch (activeTool) {
+      case "audio":
+        return (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subToolScroll}>
+            <Pressable onPress={handleExtractAudio} style={styles.subToolBtn}>
+              <Ionicons name="folder-open-outline" size={20} color={colors.text} />
+              <Text style={styles.subToolLabel}>Extract</Text>
+            </Pressable>
+
+            <Pressable onPress={() => { setDrawerTab("sounds"); setShowMediaDrawer(true); }} style={styles.subToolBtn}>
+              <Ionicons name="musical-notes-outline" size={20} color={colors.accent} />
+              <Text style={styles.subToolLabel}>Sounds</Text>
+            </Pressable>
+
+            <Pressable onPress={() => { setDrawerTab("fx"); setShowMediaDrawer(true); }} style={styles.subToolBtn}>
+              <Ionicons name="sparkles-outline" size={20} color={colors.warning} />
+              <Text style={styles.subToolLabel}>Sound FX</Text>
+            </Pressable>
+
+            <Pressable onPress={() => { setDrawerTab("voice"); setShowMediaDrawer(true); }} style={styles.subToolBtn}>
+              <Ionicons name="mic-outline" size={20} color={colors.danger} />
+              <Text style={styles.subToolLabel}>Record</Text>
+            </Pressable>
+
+            <Pressable onPress={() => { setDrawerTab("voice"); setShowMediaDrawer(true); }} style={styles.subToolBtn}>
+              <View style={{ position: "relative" }}>
+                <Ionicons name="pulse-outline" size={20} color={colors.accentStrong} />
+                <View style={styles.newBadgeMini}>
+                  <Text style={styles.newBadgeMiniText}>New</Text>
+                </View>
+              </View>
+              <Text style={styles.subToolLabel}>AI Voiceover</Text>
+            </Pressable>
+
+            <Pressable onPress={() => dispatch(setActiveTool("text"))} style={styles.subToolBtn}>
+              <Ionicons name="text-outline" size={20} color={colors.text} />
+              <Text style={styles.subToolLabel}>Text</Text>
+            </Pressable>
+          </ScrollView>
+        );
+
       case "speed":
         return (
           <View style={styles.subPanel}>
@@ -223,7 +295,7 @@ export default function Controls() {
       case "volume":
         return (
           <View style={styles.subPanel}>
-            <Text style={styles.panelTitle}>Volume Control: {Math.round((activeItem?.volume || 0) * 100)}%</Text>
+            <Text style={styles.panelTitle}>Volume: {Math.round((activeItem?.volume || 0) * 100)}%</Text>
             <View style={styles.chipRow}>
               {[0, 0.25, 0.5, 0.75, 1.0].map((v) => (
                 <Pressable
@@ -272,7 +344,7 @@ export default function Controls() {
               <TextInput
                 value={textVal}
                 onChangeText={setTextVal}
-                placeholder="Enter text style caption..."
+                placeholder="Enter text caption..."
                 placeholderTextColor={colors.textSoft}
                 style={styles.textInput}
               />
@@ -377,12 +449,11 @@ export default function Controls() {
 
   return (
     <View style={styles.container}>
-      {/* Contextual Toolbar Panel display (filters, speed curves, transitions) */}
+      {/* Contextual Toolbar Panel display */}
       {activeTool ? (
         <View style={styles.expandedPanel}>
           <Pressable onPress={() => dispatch(setActiveTool(null))} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={16} color={colors.text} />
-            <Text style={{ color: colors.text, fontSize: 12, fontWeight: "700" }}>Back</Text>
+            <Ionicons name="chevron-back" size={18} color={colors.text} />
           </Pressable>
           {renderToolPanel()}
         </View>
@@ -390,52 +461,71 @@ export default function Controls() {
         /* Base toolbar icons */
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolbarScroll}>
           {activeItem && (
-            <>
-              <Pressable onPress={handleSplit} style={styles.toolItem}>
-                <Ionicons name="cut-outline" size={18} color={colors.text} />
-                <Text style={styles.toolLabel}>Split</Text>
-              </Pressable>
+            <Pressable onPress={handleSplit} style={styles.toolItem}>
+              <Ionicons name="cut-outline" size={20} color={colors.text} />
+              <Text style={styles.toolLabel}>Split</Text>
+            </Pressable>
+          )}
 
+          <Pressable onPress={() => dispatch(setActiveTool("audio"))} style={styles.toolItem}>
+            <Ionicons name="musical-notes" size={20} color={colors.accent} />
+            <Text style={styles.toolLabel}>Audio</Text>
+          </Pressable>
+
+          <Pressable onPress={() => dispatch(setActiveTool("text"))} style={styles.toolItem}>
+            <Ionicons name="text" size={20} color={colors.text} />
+            <Text style={styles.toolLabel}>Text</Text>
+          </Pressable>
+
+          <Pressable onPress={() => { setDrawerTab("videos"); setShowMediaDrawer(true); }} style={styles.toolItem}>
+            <Ionicons name="layers-outline" size={20} color={colors.text} />
+            <Text style={styles.toolLabel}>Overlay</Text>
+          </Pressable>
+
+          <Pressable onPress={() => dispatch(setActiveTool("filter"))} style={styles.toolItem}>
+            <Ionicons name="color-palette-outline" size={20} color={colors.text} />
+            <Text style={styles.toolLabel}>Effects</Text>
+          </Pressable>
+
+          {activeItem && (
+            <>
               <Pressable onPress={() => dispatch(setActiveTool("speed"))} style={styles.toolItem}>
-                <Ionicons name="speedometer-outline" size={18} color={colors.text} />
+                <Ionicons name="speedometer-outline" size={20} color={colors.text} />
                 <Text style={styles.toolLabel}>Speed</Text>
               </Pressable>
 
               <Pressable onPress={() => dispatch(setActiveTool("volume"))} style={styles.toolItem}>
-                <Ionicons name="volume-medium-outline" size={18} color={colors.text} />
+                <Ionicons name="volume-medium-outline" size={20} color={colors.text} />
                 <Text style={styles.toolLabel}>Volume</Text>
               </Pressable>
 
-              <Pressable onPress={() => dispatch(setActiveTool("filter"))} style={styles.toolItem}>
-                <Ionicons name="color-palette-outline" size={18} color={colors.text} />
-                <Text style={styles.toolLabel}>Filters</Text>
-              </Pressable>
-
               <Pressable onPress={() => dispatch(setActiveTool("keyframe"))} style={styles.toolItem}>
-                <Ionicons name="diamond-outline" size={18} color={colors.text} />
+                <Ionicons name="diamond-outline" size={20} color={colors.text} />
                 <Text style={styles.toolLabel}>Keyframe</Text>
               </Pressable>
             </>
           )}
 
-          <Pressable onPress={() => dispatch(setActiveTool("text"))} style={styles.toolItem}>
-            <Ionicons name="text" size={18} color={colors.text} />
-            <Text style={styles.toolLabel}>Text</Text>
-          </Pressable>
-
           <Pressable onPress={() => dispatch(setActiveTool("ai"))} style={styles.toolItem}>
-            <Ionicons name="sparkles" size={18} color={colors.accent} />
-            <Text style={styles.toolLabel}>AI tools</Text>
+            <Ionicons name="sparkles" size={20} color={colors.accent} />
+            <Text style={styles.toolLabel}>AI Tools</Text>
           </Pressable>
 
           {activeItem && (
             <Pressable onPress={handleDelete} style={styles.toolItem}>
-              <Ionicons name="trash-outline" size={18} color={colors.danger} />
+              <Ionicons name="trash-outline" size={20} color={colors.danger} />
               <Text style={styles.toolLabel}>Delete</Text>
             </Pressable>
           )}
         </ScrollView>
       )}
+
+      {/* Media & Sounds Drawer */}
+      <MediaDrawer
+        visible={showMediaDrawer}
+        initialTab={drawerTab}
+        onClose={() => setShowMediaDrawer(false)}
+      />
 
       {/* Curves graph editor modal sheet */}
       <Modal visible={showCurveEditor} transparent animationType="slide">
@@ -473,6 +563,39 @@ const styles = StyleSheet.create({
     gap: 16,
     height: 48,
     alignItems: "center",
+  },
+  subToolScroll: {
+    paddingHorizontal: spacing.sm,
+    gap: 12,
+    alignItems: "center",
+    height: 48,
+  },
+  subToolBtn: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    minWidth: 54,
+  },
+  subToolLabel: {
+    color: colors.text,
+    fontSize: 10,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  newBadgeMini: {
+    position: "absolute",
+    top: -4,
+    right: -10,
+    backgroundColor: colors.danger,
+    paddingHorizontal: 3,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  newBadgeMiniText: {
+    color: "#fff",
+    fontSize: 7,
+    fontWeight: "800",
   },
   toolItem: {
     alignItems: "center",

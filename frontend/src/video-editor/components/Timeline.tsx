@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Dimensions,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -11,14 +12,17 @@ import {
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 
 import { colors, spacing } from "../../theme/tokens";
 import {
+  addTrackItem,
   setActiveItem,
   setCurrentTime,
   setZoomLevel,
 } from "../../store/videoEditorSlice";
 import { Track, TrackItem } from "../types";
+import MediaDrawer from "./MediaDrawer";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const TIMELINE_CENTER_OFFSET = SCREEN_WIDTH / 2;
@@ -33,6 +37,8 @@ export default function Timeline() {
   const isPlaying = useSelector((state: any) => state.videoEditor.isPlaying);
   const zoomLevel = useSelector((state: any) => state.videoEditor.zoomLevel); // px per second
   const activeItemId = useSelector((state: any) => state.videoEditor.activeItemId);
+
+  const [showAudioDrawer, setShowAudioDrawer] = useState(false);
 
   // Sync timeline scroll with playback and currentTime changes
   useEffect(() => {
@@ -50,7 +56,7 @@ export default function Timeline() {
   };
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (isPlaying || !isUserDraggingRef.current) return; // only sync when user is physically dragging
+    if (isPlaying || !isUserDraggingRef.current) return;
     
     const scrollX = event.nativeEvent.contentOffset.x;
     const timeMs = (scrollX / zoomLevel) * 1000;
@@ -66,6 +72,56 @@ export default function Timeline() {
     return (timeMs / 1000) * zoomLevel;
   };
 
+  // Pick video to append directly to Main Video Track
+  const handlePickVideoForMainTrack = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission Required", "Please allow gallery access to import videos.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["videos"],
+      allowsEditing: false,
+      quality: 1,
+    });
+
+    if (result.canceled || !result.assets?.length) return;
+
+    const asset = result.assets[0];
+    const duration = asset.duration ? Math.round(asset.duration) : 5000;
+
+    const mainTrack = currentProject.tracks.find((t: Track) => t.id === "track-video-main");
+    let startOffset = 0;
+    if (mainTrack && mainTrack.items.length > 0) {
+      const lastItem = mainTrack.items[mainTrack.items.length - 1];
+      startOffset = lastItem.startOffsetMs + lastItem.durationMs;
+    }
+
+    const newItem: TrackItem = {
+      id: `video-${Date.now()}`,
+      type: "video",
+      name: asset.fileName || `Clip ${(mainTrack?.items.length || 0) + 1}`,
+      sourceUri: asset.uri,
+      startOffsetMs: startOffset,
+      durationMs: duration,
+      startCutMs: 0,
+      endCutMs: 0,
+      x: 0,
+      y: 0,
+      scale: 1,
+      rotation: 0,
+      opacity: 1,
+      volume: 1.0,
+      speed: 1.0,
+      filterPreset: "original",
+      adjustments: { brightness: 1, contrast: 1, saturation: 1 },
+      keyframes: [],
+    };
+
+    dispatch(addTrackItem({ trackId: "track-video-main", item: newItem }));
+  };
+
   // Helper to get color of item based on type
   const getItemColor = (type: string, isSelected: boolean) => {
     if (isSelected) return colors.accentStrong;
@@ -75,7 +131,7 @@ export default function Timeline() {
       case "overlay":
         return "#581c87"; // Deep Purple
       case "audio":
-        return "#064e3b"; // Deep Green
+        return "#0f766e"; // Teal / Waveform cyan-green
       case "text":
         return "#78350f"; // Brown/Orange
       case "sticker":
@@ -179,64 +235,115 @@ export default function Timeline() {
               {renderRuler()}
 
               {/* Tracks */}
-              {currentProject.tracks.map((track: Track) => (
-                <View key={track.id} style={[styles.trackRow, { width: timelineContentWidth }]}>
-                  {/* Track icon and name tag */}
-                  <View style={styles.trackHeader}>
-                    <Text style={styles.trackHeaderText} numberOfLines={1}>
-                      {track.name}
-                    </Text>
-                  </View>
+              {currentProject.tracks.map((track: Track) => {
+                const lastItemEndMs = track.items.reduce(
+                  (max, itm) => Math.max(max, itm.startOffsetMs + itm.durationMs),
+                  0
+                );
 
-                  {/* Track content area */}
-                  <View style={[styles.trackContent, { width: timelineContentWidth }]}>
-                    {track.items.map((item: TrackItem) => {
-                      const isSelected = activeItemId === item.id;
-                      const left = timeToPx(item.startOffsetMs);
-                      const width = timeToPx(item.durationMs);
+                return (
+                  <View key={track.id} style={[styles.trackRow, { width: timelineContentWidth }]}>
+                    {/* Track icon and name tag */}
+                    <View style={styles.trackHeader}>
+                      <Text style={styles.trackHeaderText} numberOfLines={1}>
+                        {track.name}
+                      </Text>
+                    </View>
 
-                      return (
+                    {/* Track content area */}
+                    <View style={[styles.trackContent, { width: timelineContentWidth }]}>
+                      {track.items.map((item: TrackItem) => {
+                        const isSelected = activeItemId === item.id;
+                        const left = timeToPx(item.startOffsetMs);
+                        const width = timeToPx(item.durationMs);
+
+                        return (
+                          <Pressable
+                            key={item.id}
+                            onPress={() => selectClip(track.id, item.id)}
+                            style={[
+                              styles.clipBlock,
+                              {
+                                left,
+                                width,
+                                backgroundColor: getItemColor(item.type, isSelected),
+                                borderColor: isSelected ? colors.text : colors.border,
+                                borderWidth: isSelected ? 2 : 1,
+                              },
+                            ]}
+                          >
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                              {item.type === "audio" && (
+                                <Ionicons name="musical-note" size={12} color="#5eead4" />
+                              )}
+                              <Text style={styles.clipLabel} numberOfLines={1}>
+                                {item.name}
+                              </Text>
+                            </View>
+
+                            {/* Audio Waveform visualization */}
+                            {item.type === "audio" && (
+                              <View style={styles.waveformContainer}>
+                                {[4, 8, 14, 6, 12, 16, 8, 14, 10, 6, 15, 9, 12, 5, 14].map((h, i) => (
+                                  <View
+                                    key={`w-${i}`}
+                                    style={[styles.waveBar, { height: h }]}
+                                  />
+                                ))}
+                              </View>
+                            )}
+
+                            {/* Render keyframe indicators on block */}
+                            {item.keyframes.map((k, index) => (
+                              <View
+                                key={`k-${index}`}
+                                style={{
+                                  position: "absolute",
+                                  left: timeToPx(k.timeOffsetMs),
+                                  top: "50%",
+                                  marginTop: -4,
+                                  width: 8,
+                                  height: 8,
+                                  backgroundColor: colors.accent,
+                                  transform: [{ rotate: "45deg" }],
+                                  zIndex: 10,
+                                }}
+                              />
+                            ))}
+                          </Pressable>
+                        );
+                      })}
+
+                      {/* Main Video Track [+] append button */}
+                      {track.id === "track-video-main" && (
                         <Pressable
-                          key={item.id}
-                          onPress={() => selectClip(track.id, item.id)}
+                          onPress={handlePickVideoForMainTrack}
                           style={[
-                            styles.clipBlock,
-                            {
-                              left,
-                              width,
-                              backgroundColor: getItemColor(item.type, isSelected),
-                              borderColor: isSelected ? colors.text : colors.border,
-                              borderWidth: isSelected ? 2 : 1,
-                            },
+                            styles.addClipBtn,
+                            { left: timeToPx(lastItemEndMs) + 8 },
                           ]}
                         >
-                          <Text style={styles.clipLabel} numberOfLines={1}>
-                            {item.name}
-                          </Text>
-
-                          {/* Render keyframe indicators on block */}
-                          {item.keyframes.map((k, index) => (
-                            <View
-                              key={`k-${index}`}
-                              style={{
-                                position: "absolute",
-                                left: timeToPx(k.timeOffsetMs),
-                                top: "50%",
-                                marginTop: -4,
-                                width: 8,
-                                height: 8,
-                                backgroundColor: colors.accent,
-                                transform: [{ rotate: "45deg" }],
-                                zIndex: 10,
-                              }}
-                            />
-                          ))}
+                          <Ionicons name="add" size={22} color="#fff" />
                         </Pressable>
-                      );
-                    })}
+                      )}
+
+                      {/* Music Track [+ Add audio] button */}
+                      {track.id === "track-audio-music" && (
+                        <Pressable
+                          onPress={() => setShowAudioDrawer(true)}
+                          style={[
+                            styles.addAudioBtn,
+                            { left: timeToPx(lastItemEndMs) + 8 },
+                          ]}
+                        >
+                          <Ionicons name="add" size={13} color={colors.accent} />
+                          <Text style={styles.addAudioBtnText}>Add audio</Text>
+                        </Pressable>
+                      )}
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           </ScrollView>
         </ScrollView>
@@ -246,6 +353,13 @@ export default function Timeline() {
           <View style={styles.playheadHandle} />
         </View>
       </View>
+
+      {/* Audio Drawer */}
+      <MediaDrawer
+        visible={showAudioDrawer}
+        initialTab="sounds"
+        onClose={() => setShowAudioDrawer(false)}
+      />
     </View>
   );
 }
@@ -344,6 +458,47 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 11,
     fontWeight: "700",
+  },
+  addClipBtn: {
+    position: "absolute",
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addAudioBtn: {
+    position: "absolute",
+    flexDirection: "row",
+    alignItems: "center",
+    height: 36,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: "rgba(15, 118, 110, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(94, 234, 212, 0.4)",
+    gap: 4,
+  },
+  addAudioBtnText: {
+    color: "#5eead4",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  waveformContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    marginTop: 4,
+    height: 16,
+  },
+  waveBar: {
+    width: 2,
+    backgroundColor: "#5eead4",
+    borderRadius: 1,
+    opacity: 0.8,
   },
   playheadLine: {
     position: "absolute",

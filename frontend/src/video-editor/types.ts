@@ -124,7 +124,7 @@ export interface VideoEditorState {
   currentTimeMs: number;           // Playhead position
   isPlaying: boolean;              // Playback status
   zoomLevel: number;               // Pixels per second zoom factor
-  activeTool: 'split' | 'trim' | 'speed' | 'volume' | 'filter' | 'text' | 'keyframe' | 'ai' | 'chroma' | 'mask' | 'transition' | null;
+  activeTool: 'split' | 'trim' | 'speed' | 'volume' | 'filter' | 'text' | 'keyframe' | 'ai' | 'chroma' | 'mask' | 'transition' | 'audio' | 'overlay' | null;
   undoStack: VideoProject[];       // Deep copies of projects for undo
   redoStack: VideoProject[];       // Deep copies of projects for redo
   exportSettings: {
