@@ -172,20 +172,39 @@ const startRenderJob = async ({
     const hasMusic = musicClips.length > 0;
 
     // Resolve local file paths for all clips
-    const resolvedVideoClips = [];
-    for (const clip of videoClips) {
-      let localPath = fileMap[clip.id] || fileMap[clip.sourceUri] || clip.sourceUri;
+    const resolveFilePath = (fMap = {}, item) => {
+      if (!item) return null;
+      const candidates = [
+        item.id && fMap[item.id],
+        item.sourceUri && fMap[item.sourceUri],
+        item.sourceUri,
+      ].filter((p) => p && typeof p === "string");
 
-      // If sourceUri was uploaded to uploads/ directory, check if relative or filename
-      if (!fs.existsSync(localPath)) {
-        const potentialUploadPath = path.join(uploadsDirectory, path.basename(localPath));
-        if (fs.existsSync(potentialUploadPath)) {
-          localPath = potentialUploadPath;
+      for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+          return candidate;
+        }
+        try {
+          const base = path.basename(candidate);
+          const inUploads = path.join(uploadsDirectory, base);
+          if (fs.existsSync(inUploads)) {
+            return inUploads;
+          }
+        } catch (e) {
+          // ignore
         }
       }
+      return null;
+    };
 
-      if (!fs.existsSync(localPath)) {
-        throw new Error(`Media source file not found for clip "${clip.name}" (${clip.id}) at path: ${localPath}`);
+    const resolvedVideoClips = [];
+    for (const clip of videoClips) {
+      const localPath = resolveFilePath(fileMap, clip);
+
+      if (!localPath) {
+        throw new Error(
+          `Media source file not found for clip "${clip.name || clip.id}". Please ensure video files are loaded.`
+        );
       }
 
       const probe = await probeMedia(localPath);
@@ -195,20 +214,15 @@ const startRenderJob = async ({
     let resolvedMusic = null;
     if (hasMusic) {
       const musicItem = musicClips[0];
-      let localPath = fileMap[musicItem.id] || fileMap[musicItem.sourceUri] || musicItem.sourceUri;
+      const localPath = resolveFilePath(fileMap, musicItem);
 
-      if (!fs.existsSync(localPath)) {
-        const potentialUploadPath = path.join(uploadsDirectory, path.basename(localPath));
-        if (fs.existsSync(potentialUploadPath)) {
-          localPath = potentialUploadPath;
-        }
-      }
-
-      if (fs.existsSync(localPath)) {
+      if (localPath) {
         const probe = await probeMedia(localPath);
         resolvedMusic = { ...musicItem, localPath, probe };
       } else {
-        console.warn(`[RenderService] Music file not found at ${localPath}, continuing without music track.`);
+        console.warn(
+          `[RenderService] Music file for "${musicItem.name || musicItem.id}" not found on server, continuing without background music.`
+        );
       }
     }
 

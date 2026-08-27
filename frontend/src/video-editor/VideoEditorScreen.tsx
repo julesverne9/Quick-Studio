@@ -136,11 +136,35 @@ export default function VideoEditorScreen() {
       return;
     }
 
+    const mainTrack = currentProject.tracks.find((t: any) => t.id === "track-video-main");
+    const videoClips = mainTrack?.items?.filter((i: any) => i && i.sourceUri) || [];
+    if (videoClips.length === 0) {
+      Alert.alert(
+        "No Video Clips",
+        "Please add at least one video clip to the Main Video Track before exporting."
+      );
+      return;
+    }
+
     setIsExporting(true);
     setExportProgress(5);
     setExportedVideoUrl(null);
 
     try {
+      const isLocalMediaUri = (uri?: string) => {
+        if (!uri || typeof uri !== "string") return false;
+        return (
+          uri.startsWith("file://") ||
+          uri.startsWith("content://") ||
+          uri.startsWith("ph://") ||
+          uri.startsWith("/") ||
+          uri.startsWith("blob:") ||
+          uri.includes("ExperienceData") ||
+          uri.includes("ImagePicker") ||
+          uri.includes("cache")
+        );
+      };
+
       // Build FormData payload to support uploading local device clips
       const formData = new FormData();
       formData.append(
@@ -157,10 +181,7 @@ export default function VideoEditorScreen() {
       // Attach any local source media files
       currentProject.tracks.forEach((track: any) => {
         track.items.forEach((item: any) => {
-          if (
-            item.sourceUri &&
-            (item.sourceUri.startsWith("file://") || item.sourceUri.startsWith("content://"))
-          ) {
+          if (item.sourceUri && isLocalMediaUri(item.sourceUri)) {
             formData.append(`file_${item.id}`, {
               uri: item.sourceUri,
               name: `${item.id}.mp4`,
