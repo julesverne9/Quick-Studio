@@ -65,6 +65,36 @@ const buildFilterChain = ({ preset, brightness, contrast, saturation }) => {
   return filters.join(",");
 };
 
+const heicConvert = require("heic-convert");
+
+const ensureJpegIfHeif = async (filePath) => {
+  try {
+    const ext = path.extname(filePath).toLowerCase();
+    const buffer = await fs.promises.readFile(filePath);
+
+    const isHeifExt = ext === ".heic" || ext === ".heif";
+    const headerStr = buffer.slice(0, 32).toString("latin1");
+    const isHeifHeader = headerStr.includes("ftyp") && /heic|heix|hevc|mif1|msf1/i.test(headerStr);
+
+    if (isHeifExt || isHeifHeader) {
+      console.log(`[HEIC Conversion] Converting ${filePath} to standard JPEG...`);
+      const jpegBuffer = await heicConvert({
+        buffer: buffer,
+        format: "JPEG",
+        quality: 0.92,
+      });
+
+      const newPath = filePath.replace(/\.(heic|heif)$/i, "") + "-converted.jpg";
+      await fs.promises.writeFile(newPath, jpegBuffer);
+      fs.unlink(filePath, () => {});
+      return newPath;
+    }
+  } catch (err) {
+    console.warn(`[HEIC Conversion Warning] Skipped HEIF conversion: ${err.message}`);
+  }
+  return filePath;
+};
+
 router.post(
   "/process",
   validateJwt,
@@ -77,6 +107,12 @@ router.post(
       });
     }
 
+    let inputFilePath = req.file.path;
+    const isPhoto = req.file.mimetype.startsWith("image") || req.file.originalname?.match(/\.(jpg|jpeg|png|heic|heif|webp)$/i);
+    if (isPhoto) {
+      inputFilePath = await ensureJpegIfHeif(inputFilePath);
+    }
+
     const brightness = parseNumber(req.body.brightness, 1);
     const contrast = parseNumber(req.body.contrast, 1);
     const saturation = parseNumber(req.body.saturation, 1);
@@ -85,8 +121,8 @@ router.post(
       req.body.assetType ||
       (req.file.mimetype.startsWith("video") ? "video" : "photo");
 
-    const originalFilename = req.file.filename;
-    const editedFilename = `processed-${req.file.filename}`;
+    const originalFilename = path.basename(inputFilePath);
+    const editedFilename = `processed-${originalFilename.replace(/\.(jpg|jpeg|png|heic|heif)$/i, ".jpg")}`;
     const editedPath = path.join(uploadsDirectory, editedFilename);
     const baseUrl = buildBaseUrl(req);
     const originalAssetUrl = `${baseUrl}/uploads/${originalFilename}`;
@@ -112,7 +148,7 @@ router.post(
     try {
       await project.save();
 
-      ffmpeg(req.file.path)
+      ffmpeg(inputFilePath)
         .outputOptions("-vf", buildFilterChain({ preset, brightness, contrast, saturation }))
         .output(editedPath)
         .on("end", async () => {

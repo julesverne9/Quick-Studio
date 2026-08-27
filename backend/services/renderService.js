@@ -239,20 +239,28 @@ const startRenderJob = async ({
     // Initialize ffmpeg command
     const command = ffmpeg();
 
-    // Add inputs
+    // Deduplicate inputs so clips sharing the same source file reuse the same decoder
+    const uniqueInputPaths = [];
     resolvedVideoClips.forEach((c) => {
-      command.input(c.localPath);
+      if (!uniqueInputPaths.includes(c.localPath)) {
+        uniqueInputPaths.push(c.localPath);
+      }
     });
 
-    if (resolvedMusic) {
-      command.input(resolvedMusic.localPath);
+    if (resolvedMusic && !uniqueInputPaths.includes(resolvedMusic.localPath)) {
+      uniqueInputPaths.push(resolvedMusic.localPath);
     }
+
+    uniqueInputPaths.forEach((inputPath) => {
+      command.input(inputPath);
+    });
 
     // Construct filter_complex
     const filterLines = [];
 
     // Process each video clip
     resolvedVideoClips.forEach((clip, i) => {
+      const inputIndex = uniqueInputPaths.indexOf(clip.localPath);
       const startCutSec = (clip.startCutMs || 0) / 1000;
       const speed = clip.speed || 1.0;
       const clipDurSec = (clip.durationMs || 1000) / 1000;
@@ -260,7 +268,7 @@ const startRenderJob = async ({
 
       // 1. Video Trim
       filterLines.push(
-        `[${i}:v]trim=start=${startCutSec.toFixed(3)}:duration=${sourceDurSec.toFixed(3)},setpts=PTS-STARTPTS[v_trim_${i}]`
+        `[${inputIndex}:v]trim=start=${startCutSec.toFixed(3)}:duration=${sourceDurSec.toFixed(3)},setpts=PTS-STARTPTS[v_trim_${i}]`
       );
 
       // 2. Video Speed
@@ -282,7 +290,7 @@ const startRenderJob = async ({
       // 5. Audio processing
       if (clip.probe.hasAudio) {
         filterLines.push(
-          `[${i}:a]atrim=start=${startCutSec.toFixed(3)}:duration=${sourceDurSec.toFixed(3)},asetpts=PTS-STARTPTS[a_trim_${i}]`
+          `[${inputIndex}:a]atrim=start=${startCutSec.toFixed(3)}:duration=${sourceDurSec.toFixed(3)},asetpts=PTS-STARTPTS[a_trim_${i}]`
         );
 
         const atempoStr = buildAtempoFilter(speed);
@@ -305,7 +313,7 @@ const startRenderJob = async ({
     // 7. Background Music mixing
     let finalAudioTag = "[a_main]";
     if (resolvedMusic) {
-      const musicIndex = resolvedVideoClips.length;
+      const musicIndex = uniqueInputPaths.indexOf(resolvedMusic.localPath);
       const musicVol = resolvedMusic.volume !== undefined ? resolvedMusic.volume : 1.0;
       const musicStartOffsetMs = resolvedMusic.startOffsetMs || 0;
 
@@ -314,7 +322,7 @@ const startRenderJob = async ({
           `[${musicIndex}:a]adelay=${musicStartOffsetMs}|${musicStartOffsetMs},volume=${musicVol.toFixed(2)}[a_music]`
         );
       } else {
-        filterLines.push(`[${musicIndex}:a]volume=${musicVol.toFixed(2)}[a_music]`);
+        filterLines.push(`[${musicIndex}:a]volume=${musicVol.toFixed(2)}[a_music]` );
       }
 
       filterLines.push(`[a_main][a_music]amix=inputs=2:duration=first:dropout_transition=2[a_final]`);
@@ -324,18 +332,20 @@ const startRenderJob = async ({
     const filterComplexString = filterLines.join(";");
     console.log(`[RenderService] Compiled filter_complex:\n${filterComplexString}`);
 
-    // Configure ffmpeg outputs and flags
+    // Configure ffmpeg outputs and flags with strict memory limits for cloud containers
     command
       .complexFilter(filterComplexString)
       .outputOptions([
         "-map [v_main]",
         `-map ${finalAudioTag}`,
         "-c:v libx264",
-        "-preset fast",
-        "-crf 22",
+        "-preset veryfast",
+        "-threads 2",
+        "-max_muxing_queue_size 1024",
+        "-crf 23",
         "-pix_fmt yuv420p",
         "-c:a aac",
-        "-b:a 192k",
+        "-b:a 128k",
         "-movflags +faststart",
       ])
       .output(outputPath);

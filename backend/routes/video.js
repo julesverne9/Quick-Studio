@@ -80,6 +80,15 @@ router.post("/render", upload.any(), async (req, res) => {
       });
     }
 
+    // Cross-link sourceUris to uploaded files so multiple split clips from the same source file reuse the upload
+    tracks.forEach((track) => {
+      track.items?.forEach((item) => {
+        if (fileMap[item.id] && item.sourceUri) {
+          fileMap[item.sourceUri] = fileMap[item.id];
+        }
+      });
+    });
+
     // Create the project record in MongoDB
     const project = new Project({
       GuestDeviceId: projectId,
