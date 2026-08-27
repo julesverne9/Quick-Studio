@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   Alert,
   Dimensions,
+  Linking,
   Modal,
   Pressable,
   StyleSheet,
@@ -79,7 +80,7 @@ export default function VideoEditorScreen() {
 
   // Socket.io connection for real-time video compilation progress tracking
   useEffect(() => {
-    if (!isExporting) return;
+    if (!isExporting && !showExportModal) return;
 
     const socket = io(API_BASE_URL);
 
@@ -87,16 +88,34 @@ export default function VideoEditorScreen() {
       console.log("Connected to render updates socket.");
     });
 
-    socket.on("render-progress", (data: { projectId: string; progress: number }) => {
-      if (currentProject && data.projectId === currentProject.id) {
+    socket.on("render-progress", (data: {
+      projectId: string;
+      jobId?: string;
+      progress: number;
+      status?: string;
+      downloadUrl?: string;
+      editedAssetUrl?: string;
+      error?: string;
+    }) => {
+      if (currentProject && (data.projectId === currentProject.id || data.jobId === currentProject.id)) {
         setExportProgress(Math.round(data.progress));
+
+        if (data.status === "completed") {
+          const finalUrl = data.downloadUrl || data.editedAssetUrl || null;
+          setExportedVideoUrl(finalUrl);
+          setIsExporting(false);
+          Alert.alert("Render Completed", "Your video export compiled successfully!");
+        } else if (data.status === "failed") {
+          setIsExporting(false);
+          Alert.alert("Export Failed", data.error || "FFmpeg encountered an error rendering the timeline.");
+        }
       }
     });
 
     return () => {
       socket.disconnect();
     };
-  }, [isExporting, currentProject]);
+  }, [isExporting, showExportModal, currentProject]);
 
   // Estimate compiled output size in MB
   const durationSeconds = currentProject ? currentProject.durationMs / 1000 : 0;
@@ -118,43 +137,64 @@ export default function VideoEditorScreen() {
     }
 
     setIsExporting(true);
-    setExportProgress(0);
+    setExportProgress(5);
     setExportedVideoUrl(null);
 
     try {
-      // Trigger background compilation on backend
-      const response = await axios.post(
-        `${API_BASE_URL}/api/video/render`,
-        {
+      // Build FormData payload to support uploading local device clips
+      const formData = new FormData();
+      formData.append(
+        "projectData",
+        JSON.stringify({
           projectId: currentProject.id,
           name: currentProject.name,
           tracks: currentProject.tracks,
           durationMs: currentProject.durationMs,
           exportSettings: exportSettings,
-        },
+        })
+      );
+
+      // Attach any local source media files
+      currentProject.tracks.forEach((track: any) => {
+        track.items.forEach((item: any) => {
+          if (
+            item.sourceUri &&
+            (item.sourceUri.startsWith("file://") || item.sourceUri.startsWith("content://"))
+          ) {
+            formData.append(`file_${item.id}`, {
+              uri: item.sourceUri,
+              name: `${item.id}.mp4`,
+              type: item.type === "audio" ? "audio/mpeg" : "video/mp4",
+            } as any);
+          }
+        });
+      });
+
+      // Trigger background compilation on backend
+      const response = await axios.post(
+        `${API_BASE_URL}/api/video/render`,
+        formData,
         {
           headers: {
             Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data",
           },
         }
       );
 
       if (response.data.success) {
-        // Render completed (or running in bg)
         if (response.data.status === "completed") {
           setExportProgress(100);
-          setExportedVideoUrl(response.data.editedAssetUrl);
+          setExportedVideoUrl(response.data.editedAssetUrl || response.data.downloadUrl);
+          setIsExporting(false);
           Alert.alert("Render Completed", "Your premium video compiled successfully.");
-        } else {
-          // It is processing in background, socket will update percentage
-          Alert.alert("Render Processing", "Exporting has started in the background.");
         }
       }
     } catch (error: any) {
-      console.error(error);
+      console.error("[VideoEditorScreen] Export error:", error);
       Alert.alert(
         "Export Failed",
-        error.response?.data?.error || "Error initializing FFmpeg transcoder."
+        error.response?.data?.error || error.message || "Error initializing FFmpeg transcoder."
       );
       setIsExporting(false);
     }
@@ -273,33 +313,55 @@ export default function VideoEditorScreen() {
               </Pressable>
             </View>
 
-            {isExporting ? (
+            {exportedVideoUrl ? (
+              <View style={styles.progressContainer}>
+                <Ionicons name="checkmark-circle" size={48} color={colors.success} />
+                <Text style={[styles.progressLabel, { color: colors.success, marginTop: 8 }]}>
+                  Export Completed!
+                </Text>
+                <Text style={{ color: colors.textMuted, fontSize: 12, textAlign: "center", marginTop: 4, maxWidth: 280 }}>
+                  Your compiled MP4 video is ready for playback.
+                </Text>
+
+                <Pressable
+                  onPress={() => {
+                    if (exportedVideoUrl) {
+                      Linking.openURL(exportedVideoUrl);
+                    }
+                  }}
+                  style={[styles.startExportBtn, { backgroundColor: colors.success, marginTop: spacing.md, width: "100%", flexDirection: "row", justifyContent: "center", gap: 8 }]}
+                >
+                  <Ionicons name="play-circle-outline" size={20} color="#fff" />
+                  <Text style={styles.startExportBtnText}>Play / Open Exported Video</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    setExportedVideoUrl(null);
+                  }}
+                  style={{ marginTop: spacing.md, padding: 8 }}
+                >
+                  <Text style={{ color: colors.textMuted, fontSize: 12, fontWeight: "600" }}>
+                    Export Again with New Settings
+                  </Text>
+                </Pressable>
+              </View>
+            ) : isExporting ? (
               <View style={styles.progressContainer}>
                 <Text style={styles.progressLabel}>
                   {exportProgress < 100
                     ? `Encoding Video Timelines: ${exportProgress}%`
-                    : "Transcoding complete!"}
+                    : "Finalizing video package..."}
                 </Text>
 
                 {/* Horizontal Progress Bar */}
                 <View style={styles.progressBarBg}>
-                  <View style={[styles.progressBarFill, { width: `${exportProgress}%` }]} />
+                  <View style={[styles.progressBarFill, { width: `${Math.max(5, exportProgress)}%` }]} />
                 </View>
 
-                {exportedVideoUrl ? (
-                  <View style={{ marginTop: spacing.md, alignItems: "center" }}>
-                    <Text style={{ color: colors.success, fontSize: 13, fontWeight: "700" }}>
-                      Compiled MP4 available!
-                    </Text>
-                    <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 4 }}>
-                      {exportedVideoUrl}
-                    </Text>
-                  </View>
-                ) : (
-                  <Text style={styles.estimatedTimeText}>
-                    FFmpeg background compiler processing clips...
-                  </Text>
-                )}
+                <Text style={styles.estimatedTimeText}>
+                  FFmpeg background compiler rendering multi-track timelines...
+                </Text>
               </View>
             ) : (
               <View style={styles.settingsGroup}>
