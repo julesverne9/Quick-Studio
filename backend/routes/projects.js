@@ -161,6 +161,12 @@ router.post(
       GuestDeviceId:
         req.body.guestDeviceId || req.user?.sub || "authenticated_device",
       OwnerId: req.user?.sub || null,
+      Name: req.body.name || `Project ${new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })}`,
       OriginalAssetUrl: originalAssetUrl,
       EditedAssetUrl: editedAssetUrl,
       OriginalFilename: originalFilename,
@@ -245,5 +251,52 @@ router.post(
     }
   }
 );
+
+/**
+ * @route   PATCH /api/projects/:id
+ * @desc    Update project name
+ * @access  Private
+ */
+router.patch("/:id", validateJwt, async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) {
+      return res.status(400).json({ success: false, message: "Project name is required." });
+    }
+
+    const project = await Project.findById(req.params.id);
+
+    if (!project) {
+      return res.status(404).json({ success: false, message: "Project not found." });
+    }
+
+    // Check ownership
+    if (project.OwnerId && project.OwnerId.toString() !== req.user.sub) {
+      return res.status(403).json({ success: false, message: "You do not have permission to rename this project." });
+    }
+
+    project.Name = name;
+
+    // Also sync the name in metadata if it exists
+    if (project.MobileCanvasMetadata) {
+      project.MobileCanvasMetadata.name = name;
+      project.markModified("MobileCanvasMetadata");
+    }
+
+    await project.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Project renamed successfully.",
+      project: {
+        id: project._id,
+        name: project.Name
+      }
+    });
+  } catch (error) {
+    console.error("Rename project error:", error);
+    return res.status(500).json({ success: false, message: "Failed to rename project.", error: error.message });
+  }
+});
 
 module.exports = router;

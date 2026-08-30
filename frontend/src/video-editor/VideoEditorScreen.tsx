@@ -7,6 +7,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -26,6 +27,8 @@ import {
   saveCurrentProjectToSavedDrafts,
   selectProject,
   closeProject,
+  renameProject,
+  setBackendId,
 } from "../store/videoEditorSlice";
 import { saveProjectsToDisk } from "./utils/projectPersistence";
 
@@ -59,6 +62,9 @@ export default function VideoEditorScreen() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [exportedVideoUrl, setExportedVideoUrl] = useState<string | null>(null);
+
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [tempName, setTempName] = useState("");
 
   // Autosave Project Drafts to storage every 5 seconds
   useEffect(() => {
@@ -99,6 +105,10 @@ export default function VideoEditorScreen() {
     }) => {
       if (currentProject && (data.projectId === currentProject.id || data.jobId === currentProject.id)) {
         setExportProgress(Math.round(data.progress));
+
+        if (data.jobId && (!currentProject.backendId || currentProject.backendId !== data.jobId)) {
+          dispatch(setBackendId({ id: currentProject.id, backendId: data.jobId }));
+        }
 
         if (data.status === "completed") {
           const finalUrl = data.downloadUrl || data.editedAssetUrl || null;
@@ -204,6 +214,9 @@ export default function VideoEditorScreen() {
       );
 
       if (response.data.success) {
+        if (response.data.jobId) {
+          dispatch(setBackendId({ id: currentProject.id, backendId: response.data.jobId }));
+        }
         if (response.data.status === "completed") {
           setExportProgress(100);
           setExportedVideoUrl(response.data.editedAssetUrl || response.data.downloadUrl);
@@ -218,6 +231,37 @@ export default function VideoEditorScreen() {
         error.response?.data?.error || error.message || "Error initializing FFmpeg transcoder."
       );
       setIsExporting(false);
+    }
+  };
+
+  const handleRename = () => {
+    if (currentProject) {
+      setTempName(currentProject.name);
+      setIsRenaming(true);
+    }
+  };
+
+  const handleSaveName = async () => {
+    if (!tempName.trim()) {
+      setIsRenaming(false);
+      return;
+    }
+
+    dispatch(renameProject({ name: tempName.trim() }));
+    setIsRenaming(false);
+
+    if (isAuthenticated && token && currentProject && currentProject.backendId) {
+      try {
+        await axios.patch(
+          `${API_BASE_URL}/api/projects/${currentProject.backendId}`,
+          { name: tempName.trim() },
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+      } catch (err) {
+        console.log("[Rename] Backend sync failed", err);
+      }
     }
   };
 
@@ -272,9 +316,25 @@ export default function VideoEditorScreen() {
           </Pressable>
         </View>
 
-        <Text style={styles.projectName} numberOfLines={1}>
-          {currentProject.name}
-        </Text>
+        <View style={styles.projectNameContainer}>
+          {isRenaming ? (
+            <TextInput
+              style={styles.projectNameInput}
+              value={tempName}
+              onChangeText={setTempName}
+              autoFocus
+              onBlur={handleSaveName}
+              onSubmitEditing={handleSaveName}
+              returnKeyType="done"
+            />
+          ) : (
+            <Pressable onPress={handleRename}>
+              <Text style={styles.projectName} numberOfLines={1}>
+                {currentProject.name}
+              </Text>
+            </Pressable>
+          )}
+        </View>
 
         <Pressable
           onPress={() => setShowExportModal(true)}
@@ -486,13 +546,27 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
   },
-  projectName: {
+  projectNameContainer: {
     flex: 1,
+    marginHorizontal: spacing.sm,
+  },
+  projectName: {
     color: colors.text,
     fontSize: 14,
     fontWeight: "700",
     textAlign: "center",
-    marginHorizontal: spacing.md,
+  },
+  projectNameInput: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+    textAlign: "center",
+    backgroundColor: colors.surfaceSoft,
+    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: colors.accent,
   },
   exportBtn: {
     width: 68,

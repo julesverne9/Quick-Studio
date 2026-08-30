@@ -105,6 +105,7 @@ export interface Track {
 
 export interface VideoProject {
   id: string;
+  backendId?: string; // MongoDB _id
   name: string;
   width: number;
   height: number;

@@ -131,6 +131,12 @@ router.post(
     const project = new Project({
       GuestDeviceId: req.body.guestDeviceId || "authenticated_device",
       OwnerId: req.user?.sub || null,
+      Name: req.body.name || `Project ${new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })}`,
       OriginalAssetUrl: originalAssetUrl,
       EditedAssetUrl: editedAssetUrl,
       OriginalFilename: originalFilename,

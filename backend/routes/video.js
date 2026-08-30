@@ -93,6 +93,7 @@ router.post("/render", upload.any(), async (req, res) => {
     const project = new Project({
       GuestDeviceId: projectId,
       OwnerId: req.user?.sub || null,
+      Name: name || "Untitled Video Project",
       AssetType: "video",
       MobileCanvasMetadata: {
         name: name || "Untitled Video Project",

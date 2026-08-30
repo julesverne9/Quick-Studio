@@ -372,7 +372,31 @@ export const videoEditorSlice = createSlice({
         }
       }
     },
-    
+
+    renameProject(state: VideoEditorState, action: PayloadAction<{ name: string }>) {
+      if (state.currentProject) {
+        state.currentProject.name = action.payload.name;
+        state.currentProject.updatedAt = new Date().toISOString();
+
+        // Sync to projects list if it exists there
+        const idx = state.projects.findIndex(p => p.id === state.currentProject!.id);
+        if (idx !== -1) {
+          state.projects[idx].name = action.payload.name;
+          state.projects[idx].updatedAt = state.currentProject.updatedAt;
+        }
+      }
+    },
+
+    setBackendId(state: VideoEditorState, action: PayloadAction<{ id: string; backendId: string }>) {
+      if (state.currentProject && state.currentProject.id === action.payload.id) {
+        state.currentProject.backendId = action.payload.backendId;
+      }
+      const proj = state.projects.find(p => p.id === action.payload.id);
+      if (proj) {
+        proj.backendId = action.payload.backendId;
+      }
+    },
+
     updateExportSettings(state: VideoEditorState, action: PayloadAction<Partial<VideoEditorState["exportSettings"]>>) {
       state.exportSettings = {
         ...state.exportSettings,
@@ -408,6 +432,8 @@ export const {
   setActiveItem,
   addTrackItem,
   removeTrackItem,
+  renameProject,
+  setBackendId,
   updateTrackItem,
   splitTrackItem,
   addKeyframe,
