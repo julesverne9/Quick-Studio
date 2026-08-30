@@ -1,12 +1,24 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
-interface PhotoProject {
+export interface PhotoLayer {
+  id: string;
+  type: 'sticker' | 'image';
+  uri: string;
+  x: number; // percentage 0-100
+  y: number; // percentage 0-100
+  scale: number;
+  rotation: number;
+  opacity: number;
+}
+
+export interface PhotoProject {
   id: string;
   name: string;
   assetUri: string;
   assetType: 'photo' | 'video';
   preset: string;
   adjustments: { brightness: number; contrast: number; saturation: number };
+  layers: PhotoLayer[];
   createdAt: string;
   updatedAt: string;
 }
@@ -40,6 +52,7 @@ const photoEditorSlice = createSlice({
         assetType: action.payload.assetType,
         preset: "original",
         adjustments: { brightness: 1, contrast: 1, saturation: 1 },
+        layers: [],
         createdAt: now,
         updatedAt: now,
       };
@@ -78,6 +91,12 @@ const photoEditorSlice = createSlice({
         state.currentProject.updatedAt = new Date().toISOString();
       }
     },
+    updateLayers: (state, action: PayloadAction<PhotoLayer[]>) => {
+      if (state.currentProject) {
+        state.currentProject.layers = action.payload;
+        state.currentProject.updatedAt = new Date().toISOString();
+      }
+    },
     saveCurrentProjectToDrafts: (state) => {
       if (state.currentProject) {
         const index = state.projects.findIndex((p) => p.id === state.currentProject!.id);
@@ -98,6 +117,7 @@ export const {
   selectProject,
   closeProject,
   updateProject,
+  updateLayers,
   saveCurrentProjectToDrafts,
 } = photoEditorSlice.actions;
 

@@ -9,6 +9,8 @@ import {
   StyleSheet,
   Text,
   View,
+  PanResponder,
+  Animated as RNAnimated,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { Ionicons } from "@expo/vector-icons";
@@ -17,6 +19,7 @@ import * as ImagePicker from "expo-image-picker";
 import { colors, spacing } from "../../theme/tokens";
 import {
   addTrackItem,
+  reorderTrackItems,
   setActiveItem,
   setCurrentTime,
   setZoomLevel,
@@ -141,6 +144,136 @@ export default function Timeline() {
     }
   };
 
+  function DraggableClip({
+    item,
+    trackId,
+    isSelected,
+    zoomLevel,
+    onSelect
+  }: {
+    item: TrackItem,
+    trackId: string,
+    isSelected: boolean,
+    zoomLevel: number,
+    onSelect: (trackId: string, itemId: string) => void
+  }) {
+    const dispatch = useDispatch();
+    const pan = useRef(new RNAnimated.ValueXY()).current;
+    const isDragging = useRef(false);
+
+    const panResponder = useRef(
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: () => {
+          isDragging.current = true;
+          onSelect(trackId, item.id);
+        },
+        onPanResponderMove: RNAnimated.event([null, { dx: pan.x, dy: pan.y }], {
+          useNativeDriver: false,
+        }),
+        onPanResponderRelease: (e, gestureState) => {
+          isDragging.current = false;
+
+          // Calculate reorder
+          const left = (item.startOffsetMs / 1000) * zoomLevel;
+          const width = (item.durationMs / 1000) * zoomLevel;
+          const currentCenter = left + gestureState.dx + width / 2;
+
+          handleReorder(trackId, item.id, currentCenter);
+
+          RNAnimated.spring(pan, {
+            toValue: { x: 0, y: 0 },
+            useNativeDriver: false,
+          }).start();
+        },
+      })
+    ).current;
+
+    const handleReorder = (tid: string, iid: string, centerPos: number) => {
+      const track = currentProject.tracks.find((t: Track) => t.id === tid);
+      if (!track) return;
+
+      const newItems = [...track.items];
+      const draggedIndex = newItems.findIndex(i => i.id === iid);
+      if (draggedIndex === -1) return;
+
+      const draggedItem = newItems.splice(draggedIndex, 1)[0];
+
+      // Find insertion point
+      let insertIndex = 0;
+      let currentEdge = 0;
+      for (let i = 0; i < newItems.length; i++) {
+        const itemWidth = (newItems[i].durationMs / 1000) * zoomLevel;
+        const itemCenter = currentEdge + itemWidth / 2;
+        if (centerPos < itemCenter) {
+          insertIndex = i;
+          break;
+        }
+        currentEdge += itemWidth;
+        insertIndex = i + 1;
+      }
+
+      newItems.splice(insertIndex, 0, draggedItem);
+      dispatch(reorderTrackItems({ trackId: tid, newItems }));
+    };
+
+    const left = (item.startOffsetMs / 1000) * zoomLevel;
+    const width = (item.durationMs / 1000) * zoomLevel;
+
+    return (
+      <RNAnimated.View
+        {...panResponder.panHandlers}
+        style={[
+          styles.clipBlock,
+          {
+            left,
+            width,
+            backgroundColor: getItemColor(item.type, isSelected),
+            borderColor: isSelected ? colors.text : colors.border,
+            borderWidth: isSelected ? 2 : 1,
+            transform: pan.getTranslateTransform(),
+            zIndex: isDragging.current ? 100 : 1,
+          },
+        ]}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          {item.type === "audio" && (
+            <Ionicons name="musical-note" size={12} color="#5eead4" />
+          )}
+          <Text style={styles.clipLabel} numberOfLines={1}>
+            {item.name}
+          </Text>
+        </View>
+
+        {item.type === "audio" && (
+          <View style={styles.waveformContainer}>
+            {[4, 8, 14, 6, 12, 16, 8, 14, 10, 6, 15, 9, 12, 5, 14].map((h, i) => (
+              <View key={`w-${i}`} style={[styles.waveBar, { height: h }]} />
+            ))}
+          </View>
+        )}
+
+        {item.keyframes.map((k, index) => (
+          <View
+            key={`k-${index}`}
+            style={{
+              position: "absolute",
+              left: (k.timeOffsetMs / 1000) * zoomLevel,
+              top: "50%",
+              marginTop: -4,
+              width: 8,
+              height: 8,
+              backgroundColor: colors.accent,
+              transform: [{ rotate: "45deg" }],
+              zIndex: 10,
+            }}
+          />
+        ))}
+      </RNAnimated.View>
+    );
+  }
+
   const totalSeconds = Math.max(30, Math.ceil(currentProject.durationMs / 1000) + 10);
   const timelineContentWidth = totalSeconds * zoomLevel;
 
@@ -252,67 +385,16 @@ export default function Timeline() {
 
                     {/* Track content area */}
                     <View style={[styles.trackContent, { width: timelineContentWidth }]}>
-                      {track.items.map((item: TrackItem) => {
-                        const isSelected = activeItemId === item.id;
-                        const left = timeToPx(item.startOffsetMs);
-                        const width = timeToPx(item.durationMs);
-
-                        return (
-                          <Pressable
-                            key={item.id}
-                            onPress={() => selectClip(track.id, item.id)}
-                            style={[
-                              styles.clipBlock,
-                              {
-                                left,
-                                width,
-                                backgroundColor: getItemColor(item.type, isSelected),
-                                borderColor: isSelected ? colors.text : colors.border,
-                                borderWidth: isSelected ? 2 : 1,
-                              },
-                            ]}
-                          >
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                              {item.type === "audio" && (
-                                <Ionicons name="musical-note" size={12} color="#5eead4" />
-                              )}
-                              <Text style={styles.clipLabel} numberOfLines={1}>
-                                {item.name}
-                              </Text>
-                            </View>
-
-                            {/* Audio Waveform visualization */}
-                            {item.type === "audio" && (
-                              <View style={styles.waveformContainer}>
-                                {[4, 8, 14, 6, 12, 16, 8, 14, 10, 6, 15, 9, 12, 5, 14].map((h, i) => (
-                                  <View
-                                    key={`w-${i}`}
-                                    style={[styles.waveBar, { height: h }]}
-                                  />
-                                ))}
-                              </View>
-                            )}
-
-                            {/* Render keyframe indicators on block */}
-                            {item.keyframes.map((k, index) => (
-                              <View
-                                key={`k-${index}`}
-                                style={{
-                                  position: "absolute",
-                                  left: timeToPx(k.timeOffsetMs),
-                                  top: "50%",
-                                  marginTop: -4,
-                                  width: 8,
-                                  height: 8,
-                                  backgroundColor: colors.accent,
-                                  transform: [{ rotate: "45deg" }],
-                                  zIndex: 10,
-                                }}
-                              />
-                            ))}
-                          </Pressable>
-                        );
-                      })}
+                      {track.items.map((item: TrackItem) => (
+                        <DraggableClip
+                          key={item.id}
+                          item={item}
+                          trackId={track.id}
+                          isSelected={activeItemId === item.id}
+                          zoomLevel={zoomLevel}
+                          onSelect={selectClip}
+                        />
+                      ))}
 
                       {/* Main Video Track [+] append button */}
                       {track.id === "track-video-main" && (

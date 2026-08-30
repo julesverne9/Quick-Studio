@@ -150,6 +150,15 @@ router.post(
       req.body.assetType ||
       (req.file.mimetype.startsWith("video") ? "video" : "photo");
 
+    let layers = [];
+    try {
+      if (req.body.layers) {
+        layers = JSON.parse(req.body.layers);
+      }
+    } catch (err) {
+      console.warn("Failed to parse layers:", err.message);
+    }
+
     const originalFilename = path.basename(inputFilePath);
     const editedFilename = `processed-${originalFilename.replace(/\.(jpg|jpeg|png|heic|heif)$/i, ".jpg")}`;
     const editedPath = path.join(uploadsDirectory, editedFilename);
@@ -191,18 +200,43 @@ router.post(
     try {
       await project.save();
 
-      ffmpeg(inputFilePath)
-        .outputOptions(
-          "-vf",
-          buildFilterChain({
-            preset,
-            brightness,
-            contrast,
-            saturation,
-            rotation,
-            flipped,
-          })
-        )
+      const command = ffmpeg(inputFilePath);
+      const baseFilter = buildFilterChain({ preset, brightness, contrast, saturation, rotation, flipped });
+
+      if (layers.length > 0) {
+        // Complex filter logic for compositing layers
+        // Each layer needs to be an input
+        layers.forEach(layer => {
+          command.input(layer.uri);
+        });
+
+        let filterString = `[0:v]${baseFilter}[base];`;
+        let lastOutput = '[base]';
+
+        layers.forEach((layer, index) => {
+          const inputLabel = `[${index + 1}:v]`;
+          const outputLabel = `[v${index + 1}]`;
+
+          // scale2ref is great for high-quality overlays relative to base image size
+          // We use percentage-based coordinates from the mobile app (x,y is center)
+          const size = 0.2 * layer.scale; // Base size is 20% of image width
+          filterString += `${inputLabel}${lastOutput}scale2ref=w=main_w*${size}:h=-1[ovrl${index}][ref${index}];`;
+
+          // Calculate x,y based on percentage (center-aligned in app)
+          // App uses x,y as center of 80px block. We'll simplify to top-left for ffmpeg overlay.
+          const x = `(W*${layer.x}/100)-(w/2)`;
+          const y = `(H*${layer.y}/100)-(h/2)`;
+
+          filterString += `[ref${index}][ovrl${index}]overlay=x='${x}':y='${y}'${outputLabel};`;
+          lastOutput = outputLabel;
+        });
+
+        command.complexFilter(filterString.slice(0, -1)); // remove trailing semicolon
+      } else {
+        command.outputOptions("-vf", baseFilter);
+      }
+
+      command
         .output(editedPath)
         .on("end", async () => {
           project.Status = "completed";

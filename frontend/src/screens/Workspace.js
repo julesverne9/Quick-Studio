@@ -32,7 +32,13 @@ import Button from "../components/ui/Button";
 import { useAuth } from "../context/AuthContext";
 import PhotoEditorHome from './PhotoEditorHome';
 import { useSelector, useDispatch } from 'react-redux';
-import { selectProject as selectPhotoProject, createProject as createPhotoProject, closeProject as closePhotoProject, saveCurrentProjectToDrafts as savePhotoProject } from '../store/photoEditorSlice';
+import {
+  selectProject as selectPhotoProject,
+  createProject as createPhotoProject,
+  closeProject as closePhotoProject,
+  saveCurrentProjectToDrafts as savePhotoProject,
+  updateLayers as updatePhotoLayers
+} from '../store/photoEditorSlice';
 import { colors, spacing, radius } from "../theme/tokens";
 import {
   layout,
@@ -44,6 +50,15 @@ import {
 /* ═══════════════════════════════════════════════════════════════════════
    Preset definitions — each is a factory returning a 4×5 color matrix.
    ═══════════════════════════════════════════════════════════════════════ */
+
+const STICKERS = [
+  { id: 'sparkles', label: 'Sparkles', icon: 'sparkles-outline', uri: 'https://cdn-icons-png.flaticon.com/512/3233/3233514.png' },
+  { id: 'heart', label: 'Heart', icon: 'heart-outline', uri: 'https://cdn-icons-png.flaticon.com/512/833/833472.png' },
+  { id: 'star', label: 'Star', icon: 'star-outline', uri: 'https://cdn-icons-png.flaticon.com/512/1828/1828884.png' },
+  { id: 'smile', label: 'Smile', icon: 'happy-outline', uri: 'https://cdn-icons-png.flaticon.com/512/166/166538.png' },
+  { id: 'fire', label: 'Fire', icon: 'flame-outline', uri: 'https://cdn-icons-png.flaticon.com/512/426/426833.png' },
+  { id: 'cool', label: 'Cool', icon: 'glasses-outline', uri: 'https://cdn-icons-png.flaticon.com/512/3225/3225134.png' },
+];
 
 const PRESETS = [
   {
@@ -529,6 +544,72 @@ function CropOverlay({ cropRect, setCropRect, containerSize }) {
 
 /* ═══════════════════════════════════════════════════════════════════════ */
 
+/* ── Stickers / Layers UI Components ─────────────────────────── */
+
+function DraggableLayer({ layer, isActive, onSelect, onUpdate, previewSize }) {
+  const pan = useRef(null);
+
+  if (!pan.current) {
+    pan.current = PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true, // CRITICAL FIX: Ensure movement triggers the responder
+      onPanResponderGrant: () => {
+        onSelect(layer.id);
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        // Real-time dragging feel would require reanimated or local state
+        // For now, we update on release to ensure stability, but we can do local state for move
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        const newX = Math.max(0, Math.min(100, layer.x + (gestureState.dx / previewSize.width) * 100));
+        const newY = Math.max(0, Math.min(100, layer.y + (gestureState.dy / previewSize.height) * 100));
+        onUpdate(layer.id, { x: newX, y: newY });
+      },
+    });
+  }
+
+  const left = `${layer.x}%`;
+  const top = `${layer.y}%`;
+  const size = 80 * layer.scale;
+
+  return (
+    <View
+      {...pan.current.panHandlers}
+      style={{
+        position: 'absolute',
+        left,
+        top,
+        marginLeft: -size / 2,
+        marginTop: -size / 2,
+        width: size,
+        height: size,
+        zIndex: isActive ? 100 : 1,
+      }}
+    >
+      <Image
+        source={{ uri: layer.uri }}
+        style={{
+          width: '100%',
+          height: '100%',
+          opacity: layer.opacity,
+          transform: [{ rotate: `${layer.rotation}deg` }],
+        }}
+        resizeMode="contain"
+      />
+      {isActive && (
+        <View style={{
+          position: 'absolute',
+          top: -4, left: -4, right: -4, bottom: -4,
+          borderWidth: 2,
+          borderColor: colors.accent,
+          borderRadius: 4,
+          borderStyle: 'dashed'
+        }} />
+      )}
+    </View>
+  );
+}
+
 export default function Workspace() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -587,6 +668,9 @@ export default function Workspace() {
   /* Export state */
   const [isExporting, setIsExporting] = useState(false);
   const [exportResult, setExportResult] = useState(null);
+
+  /* Layers state */
+  const [activeLayerId, setActiveLayerId] = useState(null);
 
   /* ── Video player (expo-video) ───────────────────────────────── */
 
@@ -649,6 +733,54 @@ export default function Workspace() {
       p.play();
     }
   });
+
+  /* ── Layer Handlers ─────────────────────────────────────────── */
+
+  const addSticker = useCallback((sticker) => {
+    if (!currentPhotoProject) return;
+    const newLayer = {
+      id: `layer-${Date.now()}`,
+      type: 'sticker',
+      uri: sticker.uri,
+      x: 50,
+      y: 50,
+      scale: 1,
+      rotation: 0,
+      opacity: 1,
+    };
+    const updatedLayers = [...(currentPhotoProject.layers || []), newLayer];
+    dispatch(updatePhotoLayers(updatedLayers));
+    setActiveLayerId(newLayer.id);
+  }, [currentPhotoProject, dispatch]);
+
+  const updateLayer = useCallback((layerId, updates) => {
+    if (!currentPhotoProject) return;
+    const updatedLayers = (currentPhotoProject.layers || []).map(l =>
+      l.id === layerId ? { ...l, ...updates } : l
+    );
+    dispatch(updatePhotoLayers(updatedLayers));
+  }, [currentPhotoProject, dispatch]);
+
+  const removeLayer = useCallback((layerId) => {
+    if (!currentPhotoProject) return;
+    const updatedLayers = (currentPhotoProject.layers || []).filter(l => l.id !== layerId);
+    dispatch(updatePhotoLayers(updatedLayers));
+    if (activeLayerId === layerId) setActiveLayerId(null);
+  }, [currentPhotoProject, activeLayerId, dispatch]);
+
+  const moveLayer = useCallback((layerId, direction) => {
+    if (!currentPhotoProject) return;
+    const layers = [...(currentPhotoProject.layers || [])];
+    const index = layers.findIndex(l => l.id === layerId);
+    if (index === -1) return;
+
+    if (direction === 'up' && index < layers.length - 1) {
+      [layers[index], layers[index + 1]] = [layers[index + 1], layers[index]];
+    } else if (direction === 'down' && index > 0) {
+      [layers[index], layers[index - 1]] = [layers[index - 1], layers[index]];
+    }
+    dispatch(updatePhotoLayers(layers));
+  }, [currentPhotoProject, dispatch]);
 
   /* ── Compute the final combined color matrix ─────────────────────── */
 
@@ -861,10 +993,16 @@ export default function Workspace() {
         formData.append("preset", activePreset);
         formData.append("brightness", String(adjustments.brightness));
         formData.append("contrast", String(adjustments.contrast));
-        formData.append("saturation", String(adjustments.saturation));
+    formData.append("saturation", String(adjustments.saturation));
 
-        // Geometry / Transform params
-        formData.append("rotation", String(geometry.rotation));
+    // Geometry / Transform params
+    formData.append("rotation", String(geometry.rotation));
+    formData.append("flipped", String(geometry.flipped));
+
+    // Layers / Stickers
+    if (currentPhotoProject.layers && currentPhotoProject.layers.length > 0) {
+      formData.append("layers", JSON.stringify(currentPhotoProject.layers));
+    }
         formData.append("scale", String(geometry.scale));
         formData.append("flipped", String(geometry.flipped));
 
@@ -918,8 +1056,10 @@ export default function Workspace() {
 
   const TAB_CONFIG = [
     { key: "presets", label: "Presets", icon: "color-filter-outline" },
-    { key: "adjust", label: "Adjust", icon: "options-outline" },
-    { key: "transform", label: "Transform", icon: "resize-outline" },
+  { key: "adjust", label: "Adjust", icon: "options-outline" },
+  { key: "stickers", label: "Stickers", icon: "happy-outline" },
+  { key: "layers", label: "Layers", icon: "layers-outline" },
+  { key: "transform", label: "Transform", icon: "resize-outline" },
   ];
 
   /* ── Helper: render filtered image ───────────────────────────────── */
@@ -950,8 +1090,26 @@ export default function Workspace() {
     );
 
     return (
-      <View style={editorStyles.assetPreviewFrame}>
+      <View
+        style={editorStyles.assetPreviewFrame}
+        onLayout={(e) => {
+          const { width, height } = e.nativeEvent.layout;
+          setPreviewSize({ width, height });
+        }}
+      >
         {imageWithTransform}
+
+        {/* Stickers / Layers */}
+        {(currentPhotoProject?.layers || []).map(layer => (
+          <DraggableLayer
+            key={layer.id}
+            layer={layer}
+            isActive={activeLayerId === layer.id}
+            previewSize={previewSize}
+            onSelect={setActiveLayerId}
+            onUpdate={updateLayer}
+          />
+        ))}
 
         {/* Crop overlay — only on transform tab with crop active */}
         {showCropOverlay && activeTab === "transform" && (
@@ -1268,6 +1426,85 @@ export default function Workspace() {
                   </Text>
                 </Pressable>
               </View>
+            )}
+
+            {/* ── Stickers tab ────────────────────────────── */}
+            {activeTab === "stickers" && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={editorStyles.presetsScroll}
+              >
+                {STICKERS.map((sticker) => (
+                  <Pressable
+                    key={sticker.id}
+                    onPress={() => addSticker(sticker)}
+                    style={editorStyles.presetItem}
+                  >
+                    <View style={editorStyles.presetThumb}>
+                      <Image
+                        source={{ uri: sticker.uri }}
+                        style={editorStyles.presetThumbImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+                    <Text style={editorStyles.presetLabel}>{sticker.label}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            )}
+
+            {/* ── Layers tab ────────────────────────────── */}
+            {activeTab === "layers" && (
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ padding: 16 }}
+              >
+                {(currentPhotoProject?.layers || []).length === 0 ? (
+                  <Text style={{ color: colors.textMuted, textAlign: 'center', marginTop: 20 }}>
+                    No layers added yet. Add a sticker to get started!
+                  </Text>
+                ) : (
+                  [...(currentPhotoProject.layers)].reverse().map((layer) => (
+                    <View
+                      key={layer.id}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: activeLayerId === layer.id ? colors.backgroundMuted : 'transparent',
+                        padding: 8,
+                        borderRadius: 8,
+                        marginBottom: 8,
+                        borderWidth: 1,
+                        borderColor: activeLayerId === layer.id ? colors.accent : colors.border
+                      }}
+                    >
+                      <Pressable
+                        onPress={() => setActiveLayerId(layer.id)}
+                        style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
+                      >
+                        <Image source={{ uri: layer.uri }} style={{ width: 40, height: 40, borderRadius: 4 }} />
+                        <View style={{ marginLeft: 12 }}>
+                          <Text style={{ color: colors.text, fontWeight: 'bold' }}>Sticker</Text>
+                          <Text style={{ color: colors.textMuted, fontSize: 10 }}>Layer ID: {layer.id.slice(-4)}</Text>
+                        </View>
+                      </Pressable>
+
+                      <View style={{ flexDirection: 'row', gap: 12 }}>
+                        <Pressable onPress={() => moveLayer(layer.id, 'up')}>
+                          <Ionicons name="chevron-up" size={20} color={colors.text} />
+                        </Pressable>
+                        <Pressable onPress={() => moveLayer(layer.id, 'down')}>
+                          <Ionicons name="chevron-down" size={20} color={colors.text} />
+                        </Pressable>
+                        <Pressable onPress={() => removeLayer(layer.id)}>
+                          <Ionicons name="trash-outline" size={20} color={colors.danger} />
+                        </Pressable>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </ScrollView>
             )}
 
             {/* ── Transform tab ─────────────────────────── */}

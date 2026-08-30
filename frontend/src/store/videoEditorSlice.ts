@@ -288,6 +288,32 @@ export const videoEditorSlice = createSlice({
         }
       }
     },
+
+    reorderTrackItems(state: VideoEditorState, action: PayloadAction<{ trackId: string; newItems: TrackItem[] }>) {
+      if (!state.currentProject) return;
+      const track = state.currentProject.tracks.find(t => t.id === action.payload.trackId);
+      if (track) {
+        track.items = action.payload.newItems;
+
+        // Recalculate startOffsetMs for all items in the track to keep them contiguous
+        let currentOffset = 0;
+        track.items.forEach(item => {
+          item.startOffsetMs = currentOffset;
+          currentOffset += item.durationMs;
+        });
+
+        // Recalculate total project duration
+        let maxDuration = 0;
+        state.currentProject.tracks.forEach((t: Track) => {
+          t.items.forEach((itm: TrackItem) => {
+            const end = itm.startOffsetMs + itm.durationMs;
+            if (end > maxDuration) maxDuration = end;
+          });
+        });
+        state.currentProject.durationMs = maxDuration;
+        state.currentProject.updatedAt = new Date().toISOString();
+      }
+    },
     
     splitTrackItem(state: VideoEditorState, action: PayloadAction<{ trackId: string; itemId: string; splitTimeMs: number }>) {
       if (!state.currentProject) return;
@@ -433,6 +459,7 @@ export const {
   addTrackItem,
   removeTrackItem,
   renameProject,
+  reorderTrackItems,
   setBackendId,
   updateTrackItem,
   splitTrackItem,
